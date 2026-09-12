@@ -1,0 +1,7 @@
+{
+  "tui": { "theme": "dark" },
+  "plugin": ["subtask2"],
+  "provider": {
+    "keep": { "npm": "@ai-sdk/openai-compatible", "name": "Keep me" }
+  }
+}

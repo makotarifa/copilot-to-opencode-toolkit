@@ -1,0 +1,104 @@
+# copilot-to-opencode-toolkit — agent guide
+
+Contributor guide for this repository. Read it before making changes.
+
+## What this is
+
+A self-contained Node.js 22 + TypeScript (strict) CLI that migrates a GitHub
+Copilot customization workspace (VSCode Copilot + Copilot CLI artifacts) into
+OpenCode configuration. It discovers, parses, transforms, validates, previews,
+and writes OpenCode artifacts.
+
+Copilot inputs it understands:
+
+- `.github/agents/*.agent.md` (and legacy `*.chatmode.md`) → `agents/*.md`
+- `.github/prompts/*.prompt.md` → `commands/*.md`
+- `.github/instructions/*.instructions.md` and `.github/copilot-instructions.md` → `instructions/*.md`
+- `.github/skills/*/SKILL.md` → `skills/<name>/SKILL.md`
+- `.vscode/mcp.json` (and other `mcp*.json` files / CLI homes) → `fragments/mcp-snippet.json`
+- provider/model configs (`user-model-config.json`, `model-config.json`, `provider-config.json`) → `fragments/opencode-provider.fragment.json`
+- `.github/hooks/*` → manual-rewrite warnings only (no automatic migration)
+
+## Repo layout
+
+```text
+.
+  README.md                 # user-facing overview, quickstart, flags
+  AGENTS.md                 # this contributor guide
+  LICENSE                   # MIT
+  .gitignore
+  docs/
+    migration-toolkit.md     # full toolkit specification
+  toolkit/                   # the CLI package
+    bin/migrate.ts           # entry point
+    src/                     # cli, discovery, domain, model, parse, safety, transform, write
+    test/                    # vitest unit + integration tests and fixtures
+    model-map.json           # built-in model map
+    package.json
+```
+
+## Develop and test
+
+Requires Node.js 22+. Install and run everything from the repository root, only
+inside the package:
+
+```bash
+npm --prefix toolkit install
+npm --prefix toolkit run typecheck
+npm --prefix toolkit run lint
+npm --prefix toolkit test
+```
+
+Run the CLI directly:
+
+```bash
+npx --prefix toolkit tsx toolkit/bin/migrate.ts --help
+```
+
+## Pipeline
+
+`discover → parse → model-resolver → provider-migrator → transform → validate →
+preview/consent → write → report`.
+
+Every run ends with `_migration-report.md` and `_migration-report.json` under the
+write root. Interactive runs preview each file and write only after per-file
+consent; `--dry-run` writes nothing; `--yes` writes the resolved write root
+non-interactively.
+
+## Target scope (`--scope user|project`)
+
+- `project` (default) — writes a project OpenCode tree (`commands/` plural)
+  under the output directory inside the repository. Copy the result into your
+  project's `.opencode/` config when you are ready.
+- `user` — writes to the OpenCode config home (`$XDG_CONFIG_HOME/opencode`,
+  falling back to `~/.config/opencode`) with `command/` singular, and deep-merges
+  `instructions[]`, `mcp`, and `provider` into the existing `opencode.json`
+  (unrelated keys preserved, arrays unioned). It never creates or modifies
+  `<config-home>/AGENTS.md`.
+
+## Safety
+
+- `--dry-run` performs zero writes.
+- `--yes` aborts on existing targets or colliding `opencode.json` entries unless
+  `--allow-overwrite` is passed.
+- Path validation rejects a destination inside the repository's own `.opencode/`
+  (`ERR_WRITE_INSIDE_OUR_OPENCODE` at either scope; `ERR_DEST_IN_OPENCODE` at
+  project scope) and a project destination outside the repo
+  (`ERR_DEST_OUTSIDE_REPO`).
+- No plaintext secrets: MCP and provider credentials are emitted as `{env:VAR}`,
+  and `.env.example` carries placeholders only.
+
+## Conventions
+
+- strict TypeScript: no `any`/`unknown`, no `eslint-disable`.
+- One responsibility per class/function; max 200 lines per file, 30-40 per
+  function. Extract helpers into modules.
+- No magic numbers/strings; enumerated strings are TypeScript `enum`s (not
+  string-literal unions), with explicit string initializers.
+- Self-documenting code; comment only when removing the comment would cause a bug.
+
+## Pointers
+
+- [README.md](README.md) — install, quickstart, flags, install prompts.
+- [docs/migration-toolkit.md](docs/migration-toolkit.md) — full toolkit spec.
+- [toolkit/README.md](toolkit/README.md) — CLI package reference.

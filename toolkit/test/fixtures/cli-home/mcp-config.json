@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cli-server": {
+      "command": "uvx",
+      "args": ["cli-mcp"]
+    }
+  }
+}

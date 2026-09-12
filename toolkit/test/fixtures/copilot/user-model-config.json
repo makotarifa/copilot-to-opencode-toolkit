@@ -1,0 +1,7 @@
+{
+  "providerType": "azure",
+  "baseURL": "https://example.openai.azure.com/",
+  "apiKeyEnvVar": "AZURE_OPENAI_API_KEY",
+  "apiKey": "sk-plaintext-fixture-key-not-real",
+  "models": ["gpt-4o", "gpt-4o-mini"]
+}

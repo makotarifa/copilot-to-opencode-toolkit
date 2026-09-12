@@ -1,0 +1,7 @@
+{
+  "gpt-4o": "litellm/litellm-default",
+  "gpt-4o-mini": "litellm/litellm-small-planner",
+  "claude-3.5-sonnet": "litellm/litellm-builder",
+  "o1": "litellm/litellm-planner",
+  "o1-preview": "litellm/litellm-big-planner"
+}
