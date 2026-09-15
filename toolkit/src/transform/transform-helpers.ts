@@ -1,5 +1,28 @@
 import { FrontmatterValue } from "../domain/copilot-artifact";
 
+const FAMILY_SEGMENTS = new Set(["agents", "prompts", "instructions", "skills"]);
+const INFRA_SEGMENTS = new Set(["github-copilot", ".github"]);
+
+export function namespaceOf(relativePath: string): string {
+  const segments = relativePath
+    .split("\\")
+    .join("/")
+    .split("/")
+    .filter((segment) => segment.length > 0);
+  const familyIndex = segments.findIndex((segment) => FAMILY_SEGMENTS.has(segment));
+  if (familyIndex <= 0) {
+    return "";
+  }
+  return segments
+    .slice(0, familyIndex)
+    .filter((segment) => !INFRA_SEGMENTS.has(segment))
+    .join("/");
+}
+
+export function withNamespace(directory: string, namespace: string): string {
+  return namespace.length === 0 ? directory : `${directory}/${namespace}`;
+}
+
 export function toModelValue(value: FrontmatterValue | undefined): string | string[] | undefined {
   if (typeof value === "string") {
     return value;

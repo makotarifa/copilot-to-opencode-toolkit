@@ -56,14 +56,30 @@ async function exists(target: string): Promise<boolean> {
   }
 }
 
+function familyForSection(section: ConfigSection): ArtifactFamily {
+  if (section === ConfigSection.Provider) {
+    return ArtifactFamily.Provider;
+  }
+  if (section === ConfigSection.Mcp) {
+    return ArtifactFamily.Mcp;
+  }
+  return ArtifactFamily.Unknown;
+}
+
+function collisionLabel(collision: ConfigCollision): string {
+  return collision.section === ConfigSection.Plugin
+    ? collision.section
+    : `${collision.section}.${collision.key}`;
+}
+
 function collisionRow(collision: ConfigCollision, isBlocking: boolean): ReportRow {
   return {
     code: ReportCode.ConfigOverwrite,
     severity: isBlocking ? ReportSeverity.Error : ReportSeverity.Info,
-    family: collision.section === ConfigSection.Provider ? ArtifactFamily.Provider : ArtifactFamily.Mcp,
+    family: familyForSection(collision.section),
     source: OPENCODE_CONFIG_FILE_NAME,
     dest: OPENCODE_CONFIG_FILE_NAME,
-    message: `Merging would overwrite existing \`${collision.section}.${collision.key}\` in \`${OPENCODE_CONFIG_FILE_NAME}\`.`,
+    message: `Merging would overwrite existing \`${collisionLabel(collision)}\` in \`${OPENCODE_CONFIG_FILE_NAME}\`.`,
   };
 }
 

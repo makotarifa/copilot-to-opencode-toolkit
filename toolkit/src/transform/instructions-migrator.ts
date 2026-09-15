@@ -5,6 +5,7 @@ import { ReportCode, ReportRow, ReportSeverity } from "../domain/report";
 import { ADVISORY_SCOPE_PREFIX } from "../constants";
 import { getString } from "../parse/frontmatter-values";
 import { Migrator, TransformContext, TransformResult } from "./migrator";
+import { namespaceOf, withNamespace } from "./transform-helpers";
 
 const INSTRUCTIONS_DIR_NAME = "instructions";
 const INSTRUCTIONS_SUFFIX = ".instructions.md";
@@ -16,6 +17,7 @@ const EXCLUDE_AGENT_KEY = "excludeAgent";
 export interface InstructionRecord {
   readonly source: string;
   readonly baseName: string;
+  readonly namespace: string;
   readonly applyTo?: string;
   readonly excludeAgent?: string;
 }
@@ -37,9 +39,18 @@ export function toInstructionRecord(artifact: ParsedCopilotArtifact): Instructio
   return {
     source: artifact.inventory.relativePath,
     baseName: instructionBaseName(artifact.inventory.relativePath),
+    namespace: namespaceOf(artifact.inventory.relativePath),
     applyTo,
     excludeAgent,
   };
+}
+
+export function instructionOutputPath(
+  record: InstructionRecord,
+  directory: string,
+  fileBase: string = record.baseName,
+): string {
+  return `${withNamespace(directory, record.namespace)}/${fileBase}`;
 }
 
 export function buildScopeHeader(applyTo: string | undefined): string {
@@ -104,7 +115,7 @@ export class InstructionsMigrator implements Migrator {
 
   async transform(artifact: ParsedCopilotArtifact, _context: TransformContext): Promise<TransformResult> {
     const record = toInstructionRecord(artifact);
-    const relativePath = `${INSTRUCTIONS_DIR_NAME}/${record.baseName}`;
+    const relativePath = instructionOutputPath(record, INSTRUCTIONS_DIR_NAME);
     const files: MigratedFile[] = [
       { relativePath, content: renderInstructionContent(artifact) },
     ];

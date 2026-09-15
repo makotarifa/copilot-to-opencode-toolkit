@@ -11,6 +11,7 @@ import { PromptsMigrator } from "../src/transform/prompts-migrator";
 import { loadMarkdownArtifact } from "./helpers/artifact";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
+const TEAMS_WORKSPACE = join(FIXTURES, "copilot-teams");
 const DEST_ROOT = join(import.meta.dirname, "tmp-dest");
 
 const models = createModelResolver({
@@ -44,6 +45,30 @@ describe("PromptsMigrator", () => {
     expect(file?.content).toContain("## Delegation");
     expect(file?.content).toContain('agent="agent"');
     expect(file?.content).toContain("## OpenCode notes");
+  });
+
+  test("namespaces a prompt by its source team", async () => {
+    const artifact = await loadMarkdownArtifact(
+      TEAMS_WORKSPACE,
+      "common/prompts/jira-review.prompt.md",
+      ArtifactFamily.Prompt,
+    );
+
+    const result = await new PromptsMigrator().transform(artifact, { destRoot: DEST_ROOT });
+
+    expect(result.files[0]?.relativePath).toBe("commands/common/jira-review.md");
+  });
+
+  test("keeps a root-level prompt flat", async () => {
+    const artifact = await loadMarkdownArtifact(
+      join(FIXTURES, "copilot"),
+      ".github/prompts/review.prompt.md",
+      ArtifactFamily.Prompt,
+    );
+
+    const result = await new PromptsMigrator().transform(artifact, { destRoot: DEST_ROOT });
+
+    expect(result.files[0]?.relativePath).toBe("commands/review.md");
   });
 
   test("pattern A emits subtask: true in frontmatter instead of a delegation block", async () => {

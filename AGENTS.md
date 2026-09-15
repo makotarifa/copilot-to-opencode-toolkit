@@ -76,15 +76,32 @@ non-interactively.
   (unrelated keys preserved, arrays unioned). It never creates or modifies
   `<config-home>/AGENTS.md`.
 
+## Teams and recommended plugins
+
+- **Team namespacing** — a source organised per team
+  (`<root>/<team>/{agents,instructions,prompts,skills}/…`) keeps that hierarchy
+  in the output (`instructions/<team>/<name>.md`,
+  `skills/<team>/<name>/SKILL.md`); classic layouts stay flat and each
+  instruction is written as its own `.md` file (never concatenated).
+- **`--team <name>`** (repeatable, or `all`) filters the whole run. With more
+  than one team an interactive run asks via checkbox; `--yes` without an explicit
+  selection emits a visible `MULTI_TEAM` warning with per-team/per-family counts
+  rather than migrating silently. Unknown names are flagged for manual review.
+- **Recommended plugins** — `toolkit/src/config/recommended-plugins.json`
+  (`{ version, plugins: [{ kind: "npm"|"local", specifier }] }`) drives
+  `fragments/opencode-plugins.fragment.json` and, at user scope, a union merge
+  into `opencode.json`; an empty/absent file emits no `plugin` key. Bundled local
+  `.js` sources live in `toolkit/plugins/`.
+
 ## Safety
 
 - `--dry-run` performs zero writes.
 - `--yes` aborts on existing targets or colliding `opencode.json` entries unless
   `--allow-overwrite` is passed.
-- Path validation rejects a destination inside the repository's own `.opencode/`
-  (`ERR_WRITE_INSIDE_OUR_OPENCODE` at either scope; `ERR_DEST_IN_OPENCODE` at
-  project scope) and a project destination outside the repo
-  (`ERR_DEST_OUTSIDE_REPO`).
+- Path validation rejects a destination inside the toolkit's own `.opencode/`
+  (`ERR_WRITE_INSIDE_OUR_OPENCODE` at either scope) and, at project scope, a
+  destination inside (or equal to) your project's `.opencode/`
+  (`ERR_DEST_IN_OPENCODE`) or outside the repo (`ERR_DEST_OUTSIDE_REPO`).
 - No plaintext secrets: MCP and provider credentials are emitted as `{env:VAR}`,
   and `.env.example` carries placeholders only.
 

@@ -13,6 +13,8 @@ export interface SessionDependencies {
   readonly registry?: MigratorRegistry;
   readonly prompts?: InteractivePrompts;
   readonly models?: ModelResolverPort;
+  readonly pluginsPath?: string;
+  readonly pluginSourceRoot?: string;
 }
 
 export interface SessionInput {

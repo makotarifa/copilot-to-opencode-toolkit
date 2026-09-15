@@ -1,4 +1,4 @@
-import { confirm, input, select } from "@inquirer/prompts";
+import { checkbox, confirm, input, select } from "@inquirer/prompts";
 
 import { TargetScope } from "../domain/target-scope";
 import { ModelPrompt } from "../model/model-resolver";
@@ -14,6 +14,7 @@ export interface InteractivePrompts extends ModelPrompt {
   selectScope(message: string, defaultValue: TargetScope): Promise<TargetScope>;
   confirm(message: string, defaultValue?: boolean): Promise<boolean>;
   confirmOverwrite(target: string): Promise<boolean>;
+  selectTeams(message: string, teams: readonly string[]): Promise<readonly string[]>;
   showPanel(title: string, lines: readonly string[]): void;
 }
 
@@ -42,6 +43,8 @@ export const interactivePrompts: InteractivePrompts = {
   confirm: async (message, defaultValue = false) => confirm({ message, default: defaultValue }),
   confirmOverwrite: async (target) =>
     confirm({ message: `Overwrite existing \`${target}\`?`, default: false }),
+  selectTeams: async (message, teams) =>
+    checkbox({ message, choices: teams.map((team) => ({ name: team, value: team })) }),
   confirmPersist: async (copilotModel, opencodeModelId) =>
     confirm({
       message: `Persist \`${copilotModel}\` → \`${opencodeModelId}\` into model-map.json?`,

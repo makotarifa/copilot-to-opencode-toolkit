@@ -1,12 +1,18 @@
+import { PLUGIN_KEY } from "../constants";
 import { FrontmatterValue } from "../domain/copilot-artifact";
 import { isFrontmatterRecord } from "../parse/frontmatter-values";
 
 export enum ConfigSection {
   Provider = "provider",
   Mcp = "mcp",
+  Plugin = "plugin",
 }
 
-const MERGED_SECTIONS: readonly ConfigSection[] = [ConfigSection.Provider, ConfigSection.Mcp];
+const MERGED_SECTIONS: readonly ConfigSection[] = [
+  ConfigSection.Provider,
+  ConfigSection.Mcp,
+  ConfigSection.Plugin,
+];
 
 export interface ConfigCollision {
   readonly section: ConfigSection;
@@ -39,6 +45,23 @@ function sectionOf(record: FrontmatterValue, section: ConfigSection): Frontmatte
   return isFrontmatterRecord(record) ? record[section] : undefined;
 }
 
+function isUnionArraySection(section: ConfigSection): boolean {
+  return section === ConfigSection.Plugin;
+}
+
+function isArrayClobber(
+  existingSection: FrontmatterValue | undefined,
+  patchSection: FrontmatterValue | undefined,
+): boolean {
+  if (existingSection === undefined || patchSection === undefined) {
+    return false;
+  }
+  if (Array.isArray(existingSection) && Array.isArray(patchSection)) {
+    return false;
+  }
+  return !deepEqual(existingSection, patchSection);
+}
+
 export function detectConfigCollisions(
   existing: FrontmatterValue,
   patch: FrontmatterValue,
@@ -47,6 +70,12 @@ export function detectConfigCollisions(
   for (const section of MERGED_SECTIONS) {
     const existingSection = sectionOf(existing, section);
     const patchSection = sectionOf(patch, section);
+    if (isUnionArraySection(section)) {
+      if (isArrayClobber(existingSection, patchSection)) {
+        collisions.push({ section, key: PLUGIN_KEY });
+      }
+      continue;
+    }
     if (!isFrontmatterRecord(existingSection) || !isFrontmatterRecord(patchSection)) {
       continue;
     }

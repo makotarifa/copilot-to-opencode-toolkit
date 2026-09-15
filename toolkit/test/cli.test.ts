@@ -35,6 +35,7 @@ function makeMockPrompts(overrides: Partial<InteractivePrompts> = {}): Interacti
     confirm: async () => true,
     confirmOverwrite: async () => true,
     confirmPersist: async () => true,
+    selectTeams: async (_message, teams) => teams,
     chooseModel: async () => "litellm/litellm-default",
     showPanel: () => undefined,
     ...overrides,
@@ -128,7 +129,10 @@ describe("runCli --yes", () => {
     const source = await makeCleanSource();
     const dest = join(repoRoot, "out");
 
-    const exitCode = await runCli(["--yes", "--source", source, "--dest", dest], { cwd: repoRoot });
+    const exitCode = await runCli(["--yes", "--source", source, "--dest", dest], {
+      cwd: repoRoot,
+      dependencies: { pluginsPath: await makeTempDir("toolkit-plugins-empty-") },
+    });
 
     expect(exitCode).toBe(0);
     expect(await pathExists(join(dest, "agents", "example.md"))).toBe(true);
@@ -284,7 +288,7 @@ describe("runCli scope wiring", () => {
 
     const exitCode = await runCli(
       ["--yes", "--scope", "user", "--source", source, "--dest", configHome],
-      { cwd: repoRoot },
+      { cwd: repoRoot, dependencies: { pluginsPath: await makeTempDir("toolkit-plugins-empty-") } },
     );
 
     expect(exitCode).toBe(0);
@@ -523,7 +527,7 @@ describe("runCli target-scope edge cases", () => {
     const config = JSON.parse(await readFile(join(configHome, "opencode.json"), "utf8")) as {
       instructions: string[];
     };
-    expect(config.instructions).toEqual([`${configHome}/instructions/*.md`]);
+    expect(config.instructions).toEqual([`${configHome}/instructions/**/*.md`]);
   });
 
   test("fails fast with ERR_NO_CONFIG_HOME when XDG and HOME are unset", async () => {

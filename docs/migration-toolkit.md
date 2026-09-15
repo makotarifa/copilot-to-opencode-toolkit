@@ -1,22 +1,20 @@
 # migration-toolkit.md — Interactive Copilot → OpenCode migration toolkit
 
 `toolkit/` is a self-contained Node.js 22 + TypeScript (strict) CLI that
-migrates a GitHub Copilot workspace into OpenCode-ready artifacts under the
-resolved `--dest` (a repo-local `migrated/` tree by default). Entry:
-`toolkit/bin/migrate.ts`. Config: `toolkit/package.json`,
-`toolkit/tsconfig.json`, `toolkit/model-map.json`. Full reference:
-`toolkit/README.md`.
+migrates a frozen Copilot workspace into OpenCode-ready artifacts under the
+resolved `--dest` (default `migrated/`). Entry: `toolkit/bin/migrate.ts`. Config:
+`toolkit/package.json`, `toolkit/tsconfig.json`, `toolkit/model-map.json`.
+Full reference: `toolkit/README.md`.
 
 ## Commands
 
 ```bash
-npm --prefix toolkit test            # vitest
+npm --prefix toolkit test            # vitest (206 tests, 24 files)
 npm --prefix toolkit run typecheck   # tsc --noEmit
 npm --prefix toolkit run lint        # eslint
 npx --prefix toolkit tsx toolkit/bin/migrate.ts            # interactive (default)
 npx --prefix toolkit tsx toolkit/bin/migrate.ts --dry-run  # preview only
-npx --prefix toolkit tsx toolkit/bin/migrate.ts --yes --scope project   # literal defaults: copilot-source/ → migrated/
-npx --prefix toolkit tsx toolkit/bin/migrate.ts --yes --scope project --source <copilot-workspace> --dest <output-dir>
+npx --prefix toolkit tsx toolkit/bin/migrate.ts --yes --source copilot-source --dest migrated
 ```
 
 ## Pipeline
@@ -42,9 +40,9 @@ emits `ERR_CONFIG_INVALID` and aborts with zero writes in either mode.
 
 `--scope user|project` (default `project`) selects the write root:
 
-- `project` — `resolve(repoRoot, --dest ?? migrated/)`, layout
-  mirrors a project OpenCode tree (`commands/` plural) — a staging tree you copy
-  into your project's `.opencode/` config.
+- `project` — `resolve(repoRoot, --dest ?? "migrated")`, layout mirrors a
+  project OpenCode tree (`commands/` plural); review the generated tree and
+  merge it into your project's `.opencode/` config yourself.
 - `user` — the OpenCode config home (`--dest` override > `XDG_CONFIG_HOME` →
   `${XDG}/opencode` > `~/.config/opencode`; none → `ERR_NO_CONFIG_HOME`).
   Commands land in `command/` (singular) via per-scope constants
@@ -52,7 +50,7 @@ emits `ERR_CONFIG_INVALID` and aborts with zero writes in either mode.
   fragments are deep-merged (tmp + rename) into `<config-home>/opencode.json`
   with unrelated keys preserved, and `<config-home>/AGENTS.md` is never written.
 
-The repository's own `.opencode/` is never writable in either scope
+The toolkit's own `.opencode/` is never writable in either scope
 (`ERR_WRITE_INSIDE_OUR_OPENCODE`).
 
 User-scope `instructions[]` entries are emitted as **absolute** paths
@@ -62,6 +60,45 @@ patterns against the project/worktree directory (`globUp` in upstream
 patterns resolve predictably from a global config, so the absolute form is the
 portable choice. A CLI test asserts the exact emitted values.
 
+## Team namespacing and selection
+
+Copilot workspaces can organise artifacts per team
+(`github-copilot/<team>/{agents,instructions,prompts,skills}/…`). The toolkit
+preserves that hierarchy instead of flattening by basename: the **namespace** is
+the path between the source root and the family folder (`agents|prompts|instructions|skills`),
+excluding infra segments (`github-copilot`, `.github`). Classic layouts with no
+team folder (`.github/instructions/x`, root `prompts/y`) keep the flat output.
+
+```text
+neo/instructions/generic.instructions.md            → instructions/neo/generic.md
+common/agents/java-backend-developer.agent.md       → agents/common/java-backend-developer.md
+common/skills/feign-client-integration/SKILL.md     → skills/common/feign-client-integration/SKILL.md
+common/prompts/jira-review.prompt.md                → command/common/jira-review.md  (user scope)
+.github/instructions/typescript.instructions.md     → instructions/typescript.md     (classic, flat)
+```
+
+Every instruction stays a **separate file** (one per origin, namespaced): origins
+are never concatenated, merged, or written into any `AGENTS.md`.
+
+Teams span every family, so selection filters the whole run:
+
+- `--team <name>` is repeatable; `--team all` migrates everything. Root-level
+  artifacts (no team) are always migrated.
+- Interactive runs with more than one team prompt a per-team checkbox
+  (unless `--team` is given).
+- `--yes` with no explicit `--team` never migrates silently: it emits a visible
+  `MULTI_TEAM` warning row with the per-team × per-family counts, plus one
+  per-team breakdown row showing what was migrated;
+  `_migration-report.{md,json}` carries both.
+- A `--team` value matching no discovered team emits a `MANUAL_REVIEW` row; if
+  none of the requested teams match, the run emits a `TEAM_SELECTION` error and
+  exits `1` (`computeExitCode`). `--team all` migrates everything even when
+  co-passed with other names, but each co-passed unmatched name is still flagged
+  `MANUAL_REVIEW`. An empty interactive checkbox is an explicit error: the run
+  emits a `TEAM_SELECTION` row and exits `1`.
+
+At user scope only the selected teams' entries are merged into `opencode.json`.
+
 ## Model resolution
 
 Model values resolve in two explicit modes (never a silent guess). Per-value
@@ -70,7 +107,7 @@ precedence: **map → pass-through → interactive → `--yes` fallback**.
 **JSON mode (deterministic, no prompt).** A map entry
 `{ "<copilot-model-name>": "<destination-id>" }` (keys case-insensitive)
 resolves without interaction. The built-in `toolkit/model-map.json` **ships
-opinionated defaults** (edit it), and `--model-map <path>` is
+opinionated defaults for this repo** (edit it), and `--model-map <path>` is
 merged over it, so overlay keys win even when they differ from a built-in key
 only by case:
 
@@ -105,11 +142,12 @@ preserved in `## OpenCode notes`.
 
 | Flag | Meaning |
 |---|---|
-| `--source <dir>` | Copilot workspace to read (default: `copilot-source/` under the repo root). |
-| `--dest <dir>` | Output directory (default: `migrated/`). Project scope: repo-rooted. User scope: overrides the config home (default `$XDG_CONFIG_HOME/opencode` or `~/.config/opencode`). |
+| `--source <dir>` | Copilot source root (default `copilot-source`). |
+| `--dest <dir>` | Output root. Project scope: repo-rooted (default `migrated`). User scope: config-home override (default `$XDG_CONFIG_HOME/opencode` or `~/.config/opencode`). |
 | `--scope <user\|project>` | Target scope (default `project`). |
 | `--cli-home <dir>` | Optional Copilot CLI home to merge (dedup, no precedence). Defaults to `<source>/cli-home` when it exists. |
 | `--family <name>` | Restrict the run to one family: `agent`, `prompt`, `instructions`, `skill`, `mcp`, `provider`, `hooks`. |
+| `--team <name>` | Repeatable; only migrate artifacts of these teams (`all` = every team). Omit for interactive per-team selection, or a visible `MULTI_TEAM` warning in `--yes`. |
 | `--model-map <path>` | JSON overlay merged over `toolkit/model-map.json`. |
 | `--allow-unmapped-models` | Keep unmapped/stale model values and exit 0 in `--yes` mode. |
 | `--allow-overwrite` | In `--yes` mode, replace existing targets and apply a colliding `opencode.json` merge instead of aborting. |
@@ -138,7 +176,7 @@ hooks need a manual plugin rewrite).
 | `ERR_DEST_OUTSIDE_REPO` | Project scope only: dest must resolve inside the repository root. |
 | `ERR_DEST_IN_OPENCODE` | Project scope only: dest inside (or equal to) `.opencode/` is rejected outright. |
 | `ERR_NO_CONFIG_HOME` | User scope only: no `--dest` and no resolvable `XDG_CONFIG_HOME`/`HOME`. |
-| `ERR_WRITE_INSIDE_OUR_OPENCODE` | The repository's own `.opencode/` is never writable, in either scope. |
+| `ERR_WRITE_INSIDE_OUR_OPENCODE` | The toolkit's own `.opencode/` is never writable, in either scope. |
 | `ERR_SOURCE_IS_REPO_ROOT` | Confirmation, not error: interactive asks, `--yes` refuses. |
 
 Every write target is re-checked against the validated dest root before writing.
@@ -146,31 +184,47 @@ Every write target is re-checked against the validated dest root before writing.
 ## Provider / MCP / instructions behavior
 
 - **Provider:** emits `fragments/opencode-provider.fragment.json` using
-  `{env:VAR}` (plaintext keys replaced, baseURL credentials stripped); it never
-  edits an existing `.opencode/opencode.json` — copy or merge the fragment when
-  you promote the output. (At user scope the run deep-merges the fragment into
-  the config-home `opencode.json` automatically.)
+  `{env:VAR}` (plaintext keys replaced, baseURL credentials stripped);
+  never touches `.opencode/opencode.json` — merge the emitted fragment into
+  your OpenCode config yourself once you have reviewed it.
 - **MCP:** `${input:var}` and `${env:VAR}` → `{env:VAR}` into
   `fragments/mcp-snippet.json` (entries `enabled: false` by default);
   embedded-credential URLs are stripped, unstrippable cases fail closed to
   manual review; shared `.env.example` (placeholders only) merged from provider
   + MCP vars.
-- **Instructions:** each `*.instructions.md` → `<dest>/instructions/<n>.md`
-  (verbatim body + advisory `Scope:` header from `applyTo` + notes) plus
-  `fragments/instructions-snippet.json`, whose entries and the demoted
-  lazy-load pointers in `fragments/agents-index-snippet.md` target the
-  post-promotion `.opencode/instructions/<n>.md` location; `excludeAgent` →
-  `fragments/excluded-agents.md`; past ~5 files / 8 kB the largest files are
-  demoted. Never writes any `AGENTS.md`.
+- **Instructions:** each `*.instructions.md` → `<dest>/instructions/<namespace>/<n>.md`
+  (namespace empty for classic layouts; verbatim body + advisory `Scope:` header
+  from `applyTo` + notes) plus `fragments/instructions-snippet.json`, whose
+  entries and the demoted lazy-load pointers in
+  `fragments/agents-index-snippet.md` target the eventual
+  `.opencode/instructions/<namespace>/<n>.md` location; the default snippet glob
+  is `**/*.md` (recursive, so namespaced subdirectories are covered);
+  `excludeAgent` → `fragments/excluded-agents.md`; past ~5 files / 8 kB the
+  largest files are demoted. Never writes any `AGENTS.md`.
+- **Recommended plugins:** `src/config/recommended-plugins.json` ships the
+  curated plugin set (`{ "version": 1, "plugins": [{ "kind": "npm"|"local",
+  "specifier": "…" }] }`). When it has content the toolkit emits
+  `fragments/opencode-plugins.fragment.json` (`{ "plugin": [...] }`, mirroring
+  the `mcp`/`provider` fragments) and, at user scope, unions the `plugin[]` into
+  `opencode.json` (deduped, unrelated/pre-existing entries preserved). An
+  absent file or an empty `plugins[]` array is a no-op: no `plugin` key is ever
+  emitted. npm specifiers are emitted verbatim; local `.js` specifiers resolve
+  **relative to the toolkit package root**, with the bundled sources shipped in
+  the package (`toolkit/plugins/*.js`) so the published export resolves them
+  without the consuming repo carrying `.opencode/plugins/`. Local entries are
+  copied into the target plugins dir (`<dest>/.opencode/plugins/` project scope,
+  `<dest>/plugins/` user scope) and referenced relative to the config root; a
+  local source that cannot be resolved yields a `MANUAL_REVIEW` row and the
+  entry is skipped. Invalid JSONC or schema is caught: the run emits an
+  `ERR_PLUGIN_RECOMMENDATIONS` row and exits `1` instead of crashing.
 
 ## Boundary (invariants)
 
-- The source workspace is read-only; the toolkit never mutates it.
-- The toolkit **never writes inside the repository's own `.opencode/`** (rejected
-  in both scopes via `ERR_WRITE_INSIDE_OUR_OPENCODE`). Promotion of the generated
-  files is manual.
-- All output goes under the resolved write root (`--dest`; project scope defaults
-  to `migrated/`, user scope to `~/.config/opencode`); no
-  plaintext secrets are emitted.
+- `copilot-source/` is read-only; the toolkit never mutates it.
+- The toolkit **never writes inside its own `.opencode/`** (rejected in both
+  scopes via `ERR_WRITE_INSIDE_OUR_OPENCODE`); you review the output and merge
+  it into your project's `.opencode/` config yourself.
+- All output goes under the resolved write root (`--dest`; project default
+  `migrated/`, user default `~/.config/opencode`); no plaintext secrets are emitted.
 - User scope never creates or modifies `<config-home>/AGENTS.md`; always-on rules
   go through the `instructions[]` merge into the global `opencode.json`.

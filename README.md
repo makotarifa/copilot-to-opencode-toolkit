@@ -46,9 +46,9 @@ targets abort the run unless `--allow-overwrite` is passed.
 ### Project level (default, `--scope project`)
 
 `--scope project` writes a project OpenCode tree (`commands/` plural) under the
-output directory inside the repository (default `migrated/`). The toolkit never writes into the
-repository's own `.opencode/`; copy the generated tree into your project's
-OpenCode config when you are ready.
+output directory inside the repository (default `migrated/`). The toolkit never
+writes into your project's `.opencode/`; copy the generated tree into it when you
+are ready.
 
 ```bash
 # 1) Preview with the built-in defaults (source: copilot-source/, dest: migrated/)
@@ -92,6 +92,7 @@ npx --prefix toolkit tsx toolkit/bin/migrate.ts --yes --scope user --source <cop
 | `--scope <user\|project>` | Target scope (default `project`). `project` writes the repo-local project tree; `user` writes to the OpenCode config home. |
 | `--cli-home <dir>` | Optional Copilot CLI home to merge (dedup, no precedence). Default: `<source>/cli-home` when present. |
 | `--family <name>` | Restrict to one family: `agent`, `prompt`, `instructions`, `skill`, `mcp`, `provider`, `hooks`. |
+| `--team <name>` | Repeatable; only migrate artifacts of these teams (`all` = every team). Omit for an interactive per-team checkbox, or a visible `MULTI_TEAM` warning in `--yes`. |
 | `--model-map <path>` | JSON overlay merged over `toolkit/model-map.json`. |
 | `--allow-unmapped-models` | Keep unmapped/stale models and exit 0 in `--yes` mode. |
 | `--allow-overwrite` | In `--yes` mode, replace existing targets (and apply a colliding `opencode.json` merge) instead of aborting. |
@@ -126,13 +127,61 @@ One family per migrator:
 - **provider** — `fragments/opencode-provider.fragment.json` with `{env:VAR}` keys.
 - **hooks** — stub: emits `MANUAL_REWRITE` warnings and migrates zero files (they need a manual plugin rewrite).
 
+## Teams and recommended plugins
+
+### Team namespacing and `--team`
+
+When the source organises artifacts per team
+(`<root>/<team>/{agents,instructions,prompts,skills}/…`), the toolkit preserves
+that hierarchy instead of flattening by basename: the team becomes the first
+level below the family directory (`instructions/<team>/<name>.md`,
+`skills/<team>/<name>/SKILL.md`). Classic layouts with no team folder
+(`.github/instructions/x`, `prompts/y`) stay flat, and every instruction remains
+one separate `.md` file per origin — never concatenated. Root-level artifacts
+(no team) are always migrated.
+
+Teams span every family, so selection filters the whole run:
+
+- `--team <name>` is repeatable; `--team all` migrates everything.
+- An interactive run with more than one discovered team shows a per-team
+  checkbox (`--team` skips it).
+- `--yes` with no explicit `--team` never migrates silently: it emits a visible
+  `MULTI_TEAM` warning row with the per-team × per-family counts, plus per-team
+  breakdown rows in `_migration-report.{md,json}`.
+- A `--team` name that matches no discovered team is flagged `MANUAL_REVIEW`;
+  when none of the requested teams match, the run emits a `TEAM_SELECTION` error
+  and exits `1`.
+
+### Recommended plugins
+
+`toolkit/src/config/recommended-plugins.json` ships the curated plugin set
+(`{ "version": 1, "plugins": [{ "kind": "npm"|"local", "specifier": "…" }] }`):
+
+```json
+{
+  "version": 1,
+  "plugins": [
+    { "kind": "local", "specifier": "plugins/graphify.js" },
+    { "kind": "npm", "specifier": "@zenobius/opencode-skillful@latest" }
+  ]
+}
+```
+
+When the file has content the toolkit emits
+`fragments/opencode-plugins.fragment.json` (`{ "plugin": [...] }`); at
+`--scope user` it union-merges the `plugin[]` into the target `opencode.json`
+(deduped, existing and unrelated entries preserved). An absent file or an empty
+`plugins[]` array is a no-op — no `plugin` key is ever emitted. npm specifiers
+are emitted verbatim; bundled local `.js` sources (`toolkit/plugins/*.js`) are
+copied into the target plugins dir and referenced relative to the config root.
+
 ## Limits and invariants
 
-- The toolkit **never** writes to the repository's own `.opencode/` or any
-  `AGENTS.md`; both scopes carry a path-validation wall that refuses writing the
-  repository's `.opencode/` (`ERR_WRITE_INSIDE_OUR_OPENCODE`), and at project
-  scope any `--dest` inside (or equal to) `.opencode/` is rejected outright
-  (`ERR_DEST_IN_OPENCODE`).
+- The toolkit **never** writes to an existing `.opencode/` config tree or any
+  `AGENTS.md`; both scopes carry a path-validation wall that refuses the
+  toolkit's own `.opencode/` (`ERR_WRITE_INSIDE_OUR_OPENCODE`), and at project
+  scope any `--dest` inside (or equal to) your project's `.opencode/` is rejected
+  outright (`ERR_DEST_IN_OPENCODE`).
 - All paths are validated (readable source, source ≠ dest, no nesting, in-repo
   dest at project scope, resolvable config home at user scope) with named error
   codes; every write is re-checked against the validated dest.

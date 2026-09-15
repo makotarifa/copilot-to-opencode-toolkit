@@ -12,7 +12,15 @@ import { CliOptions } from "./flag-parser";
 import { InteractivePrompts } from "./prompts";
 import { SessionInput } from "./session-types";
 
+const ALWAYS_FATAL_CODES = new Set<ReportCode>([
+  ReportCode.TeamSelection,
+  ReportCode.PluginRecommendations,
+]);
+
 export function computeExitCode(options: CliOptions, rows: readonly ReportRow[]): number {
+  if (rows.some((row) => ALWAYS_FATAL_CODES.has(row.code))) {
+    return 1;
+  }
   if (!options.yes || options.allowUnmappedModels) {
     return 0;
   }

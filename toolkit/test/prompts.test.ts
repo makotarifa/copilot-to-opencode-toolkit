@@ -4,12 +4,14 @@ const mocks = vi.hoisted(() => ({
   select: vi.fn(),
   input: vi.fn(),
   confirm: vi.fn(),
+  checkbox: vi.fn(),
 }));
 
 vi.mock("@inquirer/prompts", () => ({
   select: mocks.select,
   input: mocks.input,
   confirm: mocks.confirm,
+  checkbox: mocks.checkbox,
 }));
 
 import { interactivePrompts } from "../src/cli/prompts";

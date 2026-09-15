@@ -6,7 +6,7 @@ import { directoriesForScope, TargetScope } from "../domain/target-scope";
 import { getString } from "../parse/frontmatter-values";
 import { serializeFrontmatter } from "../parse/frontmatter-serializer";
 import { Migrator, TransformContext, TransformResult } from "./migrator";
-import { parentDirectoryName, stringifyFrontmatterValue } from "./transform-helpers";
+import { namespaceOf, parentDirectoryName, stringifyFrontmatterValue, withNamespace } from "./transform-helpers";
 
 const SKILL_FILE_NAME = "SKILL.md";
 const NAME_KEY = "name";
@@ -92,7 +92,8 @@ export class SkillsMigrator implements Migrator {
   async transform(artifact: ParsedCopilotArtifact, context: TransformContext): Promise<TransformResult> {
     const rendered = renderSkill(artifact);
     const skillsDir = directoriesForScope(context.scope ?? TargetScope.Project).skills;
-    const relativePath = `${skillsDir}/${rendered.directoryName}/${SKILL_FILE_NAME}`;
+    const namespace = namespaceOf(artifact.inventory.relativePath);
+    const relativePath = `${withNamespace(skillsDir, namespace)}/${rendered.directoryName}/${SKILL_FILE_NAME}`;
     const files: MigratedFile[] = [{ relativePath, content: rendered.content }];
     const rows: ReportRow[] = [
       {

@@ -61,9 +61,18 @@ describe("parseFlags", () => {
     expect(parseFlags(["--allow-overwrite"]).allowOverwrite).toBe(true);
   });
 
+  test("accumulates repeatable --team values", () => {
+    expect(parseFlags([]).teams).toBeUndefined();
+    expect(parseFlags(["--team", "neo"]).teams).toEqual(["neo"]);
+    expect(parseFlags(["--team", "neo", "--team", "common"]).teams).toEqual(["neo", "common"]);
+    expect(parseFlags(["--team", "all"]).teams).toEqual(["all"]);
+    expect(parseFlags(["--team"]).errors[0]).toContain("Missing value");
+  });
+
   test("advertises the scope flag in the usage text", () => {
     expect(formatUsage()).toContain("--scope <user|project>");
     expect(formatUsage()).toContain("--allow-overwrite");
+    expect(formatUsage()).toContain("--team <name>");
   });
 
   test("recognises help", () => {

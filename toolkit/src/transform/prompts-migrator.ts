@@ -9,7 +9,7 @@ import { modelResultRows } from "../model/model-report";
 import { getString } from "../parse/frontmatter-values";
 import { serializeFrontmatter } from "../parse/frontmatter-serializer";
 import { Migrator, TransformContext, TransformResult } from "./migrator";
-import { toModelValue } from "./transform-helpers";
+import { namespaceOf, toModelValue, withNamespace } from "./transform-helpers";
 
 const PROMPT_SUFFIX = ".prompt.md";
 const DESCRIPTION_KEY = "description";
@@ -159,7 +159,8 @@ export class PromptsMigrator implements Migrator {
   async transform(artifact: ParsedCopilotArtifact, context: TransformContext): Promise<TransformResult> {
     const rendered = await renderPrompt(artifact, context);
     const commandsDir = directoriesForScope(context.scope ?? TargetScope.Project).commands;
-    const relativePath = `${commandsDir}/${rendered.outputName}.md`;
+    const namespace = namespaceOf(artifact.inventory.relativePath);
+    const relativePath = `${withNamespace(commandsDir, namespace)}/${rendered.outputName}.md`;
     const files: MigratedFile[] = [{ relativePath, content: rendered.content }];
     const rows: ReportRow[] = [
       {

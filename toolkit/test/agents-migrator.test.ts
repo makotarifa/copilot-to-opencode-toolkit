@@ -13,6 +13,7 @@ import { loadMarkdownArtifact } from "./helpers/artifact";
 const FIXTURES = join(import.meta.dirname, "fixtures");
 const WORKSPACE = join(FIXTURES, "copilot");
 const AGENT_MODES = join(FIXTURES, "agent-modes");
+const TEAMS_WORKSPACE = join(FIXTURES, "copilot-teams");
 const DEST_ROOT = join(import.meta.dirname, "tmp-dest");
 
 const models = createModelResolver({
@@ -82,6 +83,30 @@ describe("AgentsMigrator", () => {
     expect(content).toContain("Model (original): `[unknown-name, gpt-4o]`");
     expect(content).toContain("Model fallback members: `unknown-name`");
     expect(result.rows.some((row) => row.code === ReportCode.UnmappedModel)).toBe(false);
+  });
+
+  test("namespaces an agent by its source team", async () => {
+    const artifact = await loadMarkdownArtifact(
+      TEAMS_WORKSPACE,
+      "common/agents/java-backend-developer.agent.md",
+      ArtifactFamily.Agent,
+    );
+
+    const result = await new AgentsMigrator().transform(artifact, CONTEXT);
+
+    expect(result.files[0]?.relativePath).toBe("agents/common/java-backend-developer.md");
+  });
+
+  test("keeps a classic agent flat", async () => {
+    const artifact = await loadMarkdownArtifact(
+      WORKSPACE,
+      ".github/agents/example.agent.md",
+      ArtifactFamily.Agent,
+    );
+
+    const result = await new AgentsMigrator().transform(artifact, CONTEXT);
+
+    expect(result.files[0]?.relativePath).toBe("agents/example.md");
   });
 
   test("aliases legacy chatmode files and records tool friction", async () => {

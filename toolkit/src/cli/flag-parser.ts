@@ -11,6 +11,7 @@ export interface CliOptions {
   readonly family?: ArtifactFamily;
   readonly scope?: TargetScope;
   readonly modelMapPath?: string;
+  readonly teams?: readonly string[];
   readonly allowUnmappedModels: boolean;
   readonly allowOverwrite: boolean;
   readonly help: boolean;
@@ -22,6 +23,7 @@ const DEST_FLAG = "--dest";
 const CLI_HOME_FLAG = "--cli-home";
 const FAMILY_FLAG = "--family";
 const MODEL_MAP_FLAG = "--model-map";
+export const TEAM_FLAG = "--team";
 const YES_FLAG = "--yes";
 const DRY_RUN_FLAG = "--dry-run";
 const ALLOW_UNMAPPED_FLAG = "--allow-unmapped-models";
@@ -34,6 +36,7 @@ const VALUE_FLAGS = new Set([
   FAMILY_FLAG,
   MODEL_MAP_FLAG,
   TARGET_SCOPE_FLAG,
+  TEAM_FLAG,
 ]);
 
 const FAMILY_VALUES = new Set(Object.values(ArtifactFamily));
@@ -51,6 +54,8 @@ export function formatUsage(): string {
     "  --scope <user|project>    Emit to the repo dest or the OpenCode config home (default: project)",
     "  --cli-home <dir>          Copilot CLI home to merge (optional)",
     "  --family <name>           Restrict to one artifact family",
+    "  --team <name>             Repeatable; only migrate these teams (\"all\" = everything;",
+    "                            omit = interactive selection or a visible multi-team warning)",
     "  --model-map <path>        Extra model-map overlay JSON",
     "  --allow-unmapped-models   Exit 0 despite unmapped/stale models",
     "  --allow-overwrite         --yes may replace existing targets instead of aborting",
@@ -69,6 +74,7 @@ export function parseFlags(argv: readonly string[]): CliOptions {
   let dest: string | undefined;
   let cliHome: string | undefined;
   let modelMapPath: string | undefined;
+  const teams: string[] = [];
   let family: ArtifactFamily | undefined;
   let scope: TargetScope | undefined;
   let yes = false;
@@ -110,6 +116,7 @@ export function parseFlags(argv: readonly string[]): CliOptions {
       else if (token === DEST_FLAG) dest = value;
       else if (token === CLI_HOME_FLAG) cliHome = value;
       else if (token === MODEL_MAP_FLAG) modelMapPath = value;
+      else if (token === TEAM_FLAG) teams.push(value);
       else if (token === TARGET_SCOPE_FLAG) {
         const parsed = parseTargetScope(value);
         if (parsed === undefined) {
@@ -138,6 +145,7 @@ export function parseFlags(argv: readonly string[]): CliOptions {
     family,
     scope,
     modelMapPath,
+    teams: teams.length > 0 ? teams : undefined,
     allowUnmappedModels,
     allowOverwrite,
     help,

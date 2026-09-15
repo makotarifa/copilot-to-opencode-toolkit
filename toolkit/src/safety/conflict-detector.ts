@@ -11,7 +11,7 @@ export interface Conflict {
   readonly message: string;
 }
 
-const SKILL_PATH_PATTERN = /^skills\/[^/]+\/SKILL\.md$/;
+const SKILL_PATH_PATTERN = /^skills\/(.*\/)?[^/]+\/SKILL\.md$/;
 
 export function detectConflicts(files: readonly MigratedFile[]): Conflict[] {
   const seenPaths = new Set<string>();

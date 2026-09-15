@@ -13,6 +13,7 @@ import {
 import {
   buildInstructionRows,
   InstructionRecord,
+  instructionOutputPath,
   renderInstructionContent,
   toInstructionRecord,
 } from "./instructions-migrator";
@@ -25,6 +26,7 @@ export { sharedPrefixSlug } from "./instructions-prefix";
 
 const INDEX_PREAMBLE =
   "CRITICAL: use your Read tool on a need-to-know basis; do NOT preload all references";
+const INSTRUCTIONS_GLOB_RECURSIVE = "**/*.md";
 
 export interface InstructionsBundleOptions {
   readonly budget?: InstructionsBudget;
@@ -50,7 +52,10 @@ function buildEntries(
 ): BundleEntry[] {
   return artifacts.map((artifact) => {
     const record = toInstructionRecord(artifact);
-    const outputName = prefixSlug === undefined ? record.baseName : `${prefixSlug}-${record.baseName}`;
+    const fileBase = prefixSlug === undefined ? record.baseName : `${prefixSlug}-${record.baseName}`;
+    const outputName = instructionOutputPath(record, INSTRUCTIONS_DIR_NAME, fileBase).slice(
+      INSTRUCTIONS_DIR_NAME.length + 1,
+    );
     const content = renderInstructionContent(artifact);
     return { artifact, record, outputName, content, bytes: Buffer.byteLength(content, "utf8") };
   });
@@ -63,10 +68,11 @@ function buildSnippet(
   promotedInstructionsDir: string,
 ): MigratedFile {
   const selected = entries.filter((entry) => !demoted.has(entry.outputName));
+  const glob = prefixSlug === undefined ? INSTRUCTIONS_GLOB_RECURSIVE : `**/${prefixSlug}-*.md`;
   const entriesValue =
     demoted.size > 0
       ? selected.map((entry) => `${promotedInstructionsDir}/${entry.outputName}`)
-      : [`${promotedInstructionsDir}/${prefixSlug ? `${prefixSlug}-` : ""}*.md`];
+      : [`${promotedInstructionsDir}/${glob}`];
 
   return {
     relativePath: `${FRAGMENTS_DIR_NAME}/${INSTRUCTIONS_SNIPPET_FILE}`,

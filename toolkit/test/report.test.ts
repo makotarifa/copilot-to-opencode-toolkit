@@ -31,6 +31,22 @@ describe("detectConflicts", () => {
     expect(conflicts[0]?.kind).toBe(ConflictKind.DuplicateSkill);
   });
 
+  test("flags duplicate skill names at any nesting depth", () => {
+    const conflicts = detectConflicts([
+      file("skills/common/foo/SKILL.md"),
+      file("skills/common/foo/SKILL.md"),
+    ]);
+    expect(conflicts[0]?.kind).toBe(ConflictKind.DuplicateSkill);
+  });
+
+  test("still flags duplicate nested instruction paths as plain duplicates", () => {
+    const conflicts = detectConflicts([
+      file("instructions/common/generic.md"),
+      file("instructions/common/generic.md"),
+    ]);
+    expect(conflicts[0]?.kind).toBe(ConflictKind.DuplicatePath);
+  });
+
   test("returns no conflicts for unique paths", () => {
     expect(detectConflicts([file("agents/x.md"), file("agents/y.md")])).toEqual([]);
   });

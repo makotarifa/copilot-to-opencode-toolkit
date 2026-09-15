@@ -3,6 +3,8 @@ import {
   INSTRUCTIONS_SNIPPET_FILE,
   MCP_FRAGMENT_FILE,
   OPENCODE_CONFIG_SCHEMA_URL,
+  PLUGIN_FRAGMENT_FILE,
+  PLUGIN_KEY,
   PROVIDER_FRAGMENT_FILE,
 } from "../constants";
 import { FrontmatterValue } from "../domain/copilot-artifact";
@@ -47,6 +49,10 @@ export function buildOpenCodeConfigPatch(files: readonly MigratedFile[]): Config
   const provider = readValue(files, PROVIDER_FRAGMENT_FILE, PROVIDER_KEY);
   if (provider !== undefined) {
     patch[PROVIDER_KEY] = provider;
+  }
+  const plugin = readValue(files, PLUGIN_FRAGMENT_FILE, PLUGIN_KEY);
+  if (plugin !== undefined) {
+    patch[PLUGIN_KEY] = plugin;
   }
   return patch;
 }

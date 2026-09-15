@@ -8,7 +8,7 @@ import { modelResultRows } from "../model/model-report";
 import { getBoolean, getRecordArray, getString, getStringArray } from "../parse/frontmatter-values";
 import { serializeFrontmatter } from "../parse/frontmatter-serializer";
 import { Migrator, TransformContext, TransformResult } from "./migrator";
-import { toModelValue } from "./transform-helpers";
+import { namespaceOf, toModelValue, withNamespace } from "./transform-helpers";
 
 const AGENT_SUFFIX = ".agent.md";
 const CHATMODE_SUFFIX = ".chatmode.md";
@@ -178,7 +178,8 @@ export class AgentsMigrator implements Migrator {
   async transform(artifact: ParsedCopilotArtifact, context: TransformContext): Promise<TransformResult> {
     const rendered = await renderAgent(artifact, context);
     const agentsDir = directoriesForScope(context.scope ?? TargetScope.Project).agents;
-    const relativePath = `${agentsDir}/${rendered.outputName}.md`;
+    const namespace = namespaceOf(artifact.inventory.relativePath);
+    const relativePath = `${withNamespace(agentsDir, namespace)}/${rendered.outputName}.md`;
     const files: MigratedFile[] = [{ relativePath, content: rendered.content }];
     const rows: ReportRow[] = [
       {

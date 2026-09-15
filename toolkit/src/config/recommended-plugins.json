@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "plugins": [
+    { "kind": "local", "specifier": "plugins/graphify.js" },
+    { "kind": "local", "specifier": "plugins/security-hooks.js" },
+    { "kind": "npm", "specifier": "@zenobius/opencode-skillful@latest" },
+    { "kind": "npm", "specifier": "opencode-background-agents@latest" },
+    { "kind": "npm", "specifier": "@openspoon/subtask2@latest" },
+    { "kind": "npm", "specifier": "@tarquinen/opencode-dcp@latest" }
+  ]
+}
