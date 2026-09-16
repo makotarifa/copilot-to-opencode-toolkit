@@ -610,6 +610,55 @@ describe("runCli target-scope edge cases", () => {
   });
 });
 
+describe("runCli manual steps summary", () => {
+  async function makeUnknownModelSource(): Promise<string> {
+    const source = await makeTempDir("toolkit-manual-steps-");
+    await mkdir(join(source, ".github", "agents"), { recursive: true });
+    await writeFile(
+      join(source, ".github", "agents", "mystery.agent.md"),
+      "---\ndescription: Mystery\nmodel: mystery-model\n---\nBody\n",
+    );
+    return source;
+  }
+
+  test("prints the manual steps summary after the write summary without changing the exit code", async () => {
+    const repoRoot = await makeRepo();
+    const source = await makeUnknownModelSource();
+    const dest = join(repoRoot, "out");
+    const logged = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const exitCode = await runCli(
+      ["--yes", "--allow-unmapped-models", "--source", source, "--dest", dest],
+      { cwd: repoRoot },
+    );
+
+    const output = logged.mock.calls.map((call) => String(call[0])).join("\n");
+    logged.mockRestore();
+    expect(exitCode).toBe(0);
+    expect(output).toContain("Manual steps required (");
+    expect(output).toContain("UNMAPPED_MODEL");
+    expect(output.indexOf("Wrote ")).toBeLessThan(output.indexOf("Manual steps required ("));
+  });
+
+  test("prints the manual steps summary on a dry run without writing", async () => {
+    const repoRoot = await makeRepo();
+    const source = await makeUnknownModelSource();
+    const dest = join(repoRoot, "out");
+    const logged = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["--dry-run", "--yes", "--source", source, "--dest", dest], {
+      cwd: repoRoot,
+    });
+
+    const output = logged.mock.calls.map((call) => String(call[0])).join("\n");
+    logged.mockRestore();
+    expect(exitCode).toBe(1);
+    expect(output).toContain("Dry run: no files were written.");
+    expect(output).toContain("Manual steps required (");
+    expect(await pathExists(dest)).toBe(false);
+  });
+});
+
 describe("runCli parse notices", () => {
   test("surfaces the lenient frontmatter fallback in the report", async () => {
     const repoRoot = await makeRepo();

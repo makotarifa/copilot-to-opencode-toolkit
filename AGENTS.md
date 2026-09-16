@@ -65,6 +65,20 @@ write root. Interactive runs preview each file and write only after per-file
 consent; `--dry-run` writes nothing; `--yes` writes the resolved write root
 non-interactively.
 
+## Manual steps (what needs a human)
+
+Every run that reaches the report stage prints a final `Manual steps required
+(N):` summary (all modes, `--dry-run` included) and writes it into
+`_migration-report.md` under `## Manual steps required`;
+`_migration-report.json` adds `summary.manualSteps { mechanical, decision }` and
+a `manualSteps[]` array. **Mechanical** steps are deterministic; **decision**
+steps need human judgement. Always manual: review the generated output and merge
+it into your project's `.opencode/` config yourself (the toolkit never writes
+your `.opencode/` or `AGENTS.md`); merge project-scope
+`fragments/*.fragment.json` into `opencode.json` (user scope merges
+automatically); fill `.env.example` placeholders with real values. Full table:
+[toolkit/README.md](toolkit/README.md#manual-steps-what-needs-a-human).
+
 ## Target scope (`--scope user|project`)
 
 - `project` (default) — writes a project OpenCode tree (`commands/` plural)

@@ -7,8 +7,9 @@ change and asks before writing, so nothing is written without consent;
 `--dry-run` writes nothing at all; `--yes` writes non-interactively.
 
 The target is chosen with `--scope` (default `project`): `project` keeps the
-repo-local `migrated/` staging to review before merging into your project's
-`.opencode/` config, while `user` emits straight into the OpenCode config home
+repo-local `migrated/` staging you review before merging into your project's
+`.opencode/` config, while
+`user` emits straight into the OpenCode config home
 (`$XDG_CONFIG_HOME/opencode` or `~/.config/opencode`).
 
 ## Requirements
@@ -55,7 +56,7 @@ The package exposes `copilot-migrate` as a `bin` entry when installed.
 
 - **`project`** (default) — the write root is `resolve(repoRoot, --dest ?? "migrated")`.
   Layout mirrors a project-scope OpenCode tree (`commands/` plural). This is the
-  documented staging area to review before merging into your project's `.opencode/`.
+  documented staging area you review before merging.
 - **`user`** — the write root is the OpenCode config home: `--dest` wins, else
   `$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`; with none of those the
   run fails fast with `ERR_NO_CONFIG_HOME`. Commands land in `command/`
@@ -81,6 +82,76 @@ confirmation.
 In `--yes` mode every choice uses the documented default (prompt pattern B; no
 interactive model resolution) and any invalid path fails fast with a non-zero
 exit.
+
+## Manual steps (what needs a human)
+
+Every run that reaches the report stage ends with a final `Manual steps
+required (N):` summary on stdout — in `--yes`, interactive and `--dry-run`
+modes alike (a dry run is exactly when you want to know what you are signing up
+for). `_migration-report.md` repeats the list under `## Manual steps required`,
+with an explicit none line when the run was fully automatic.
+`_migration-report.json` adds
+`summary.manualSteps { mechanical, decision }` and a `manualSteps[]` array;
+`summary.counts` is unchanged.
+
+Manual work comes in two kinds:
+
+| Kind | Meaning | Codes |
+|---|---|---|
+| **Mechanical** | Deterministic: do exactly this, then re-run. No judgement. | `SECRET_NORMALIZED`, `OVERWRITTEN`, `INFO_CONFIG_OVERWRITE` |
+| **Decision** | A human must choose; the toolkit cannot know the answer. | `UNMAPPED_MODEL`, `STALE_MODEL_ID`, `MANUAL_REVIEW`, `MANUAL_REWRITE`, `PARSE_FALLBACK`, `BUDGET_EXCEEDED`, `EXCLUDED_AGENT`, `MULTI_TEAM`, `TEAM_SELECTION`, `ERR_PLUGIN_RECOMMENDATIONS`, `ERR_CONFIG_INVALID` |
+
+`MIGRATED`, `MODEL_MAPPED`, `MODEL_FALLBACK` and `PROVIDER_MIGRATED` are
+automatic: the toolkit completed them and no action is needed.
+
+### Always-manual steps (after every run)
+
+These are never automated, whatever the report says:
+
+1. Review the output under the resolved dest (`migrated/` at project scope).
+2. Review the generated output, then merge it into your project's `.opencode/`
+   config.
+3. Project scope only: merge the `fragments/*.fragment.json` you want (provider,
+   MCP, plugins, `instructions[]`) into `opencode.json` **by hand** — only user
+   scope deep-merges them automatically.
+4. Replace the placeholders in `.env.example` with real values.
+5. Run `check-duplicates` before promoting skills.
+
+The toolkit **never** writes the toolkit's own `.opencode/` or any `AGENTS.md`,
+in either scope.
+
+### Per-code action table
+
+Single source of truth in the code: `MANUAL_STEP_ACTIONS` in
+`src/report/manual-steps.ts` (the CLI summary and this table quote the same
+action verbs).
+
+| Code | Kind | What you must do |
+|---|---|---|
+| `SECRET_NORMALIZED` | mechanical | Put the real values for the emitted `{env:VAR}` names into your environment or `.env` (placeholders are in `.env.example`). |
+| `OVERWRITTEN` | mechanical | Inspect the existing targets and re-run with `--allow-overwrite` to replace them. |
+| `INFO_CONFIG_OVERWRITE` | mechanical | Inspect the `opencode.json` collision and re-run with `--allow-overwrite` to apply the merge. |
+| `UNMAPPED_MODEL` | decision | Map the model in `toolkit/model-map.json` (or `--model-map`) and re-run, or keep the original with `--allow-unmapped-models`. |
+| `STALE_MODEL_ID` | decision | Point the map entry at an ID that exists in the destination catalog, then re-run. |
+| `MANUAL_REVIEW` | decision | Resolve each row by hand (disambiguate or add the referenced agent via `AMBIGUOUS_AGENT_REF:` / `UNKNOWN_AGENT_REF:`, fix the unknown artifact/team, complete the plugin step), then re-run. |
+| `MANUAL_REWRITE` | decision | Rewrite the hooks as an OpenCode plugin by hand; the toolkit migrates no hooks. |
+| `PARSE_FALLBACK` | decision | Verify the source frontmatter parsed as intended; the lenient fallback may have misread it. |
+| `BUDGET_EXCEEDED` | decision | Accept the demotion to lazy-load pointers, or shrink the instruction set and re-run. |
+| `EXCLUDED_AGENT` | decision | Enforce `excludeAgent` by hand; OpenCode has no native equivalent. |
+| `MULTI_TEAM` | decision | Confirm the team selection, or re-run with an explicit `--team <name>`. |
+| `TEAM_SELECTION` | decision | Pass `--team <name>` (or `--team all`) and re-run; nothing was migrated. |
+| `ERR_PLUGIN_RECOMMENDATIONS` | decision | Fix `toolkit/src/config/recommended-plugins.json` (invalid JSONC or schema) and re-run. |
+| `ERR_CONFIG_INVALID` | decision | Fix the existing `opencode.json` (not valid JSONC), then re-run. |
+| `MIGRATED` / `MODEL_MAPPED` / `MODEL_FALLBACK` / `PROVIDER_MIGRATED` | automatic | Nothing — the toolkit handled this automatically. |
+
+> **Severity is not the exit code.** `Exit 1` is reserved for `TEAM_SELECTION`,
+> `ERR_PLUGIN_RECOMMENDATIONS`, the `--yes` overwrite/config blockers
+> (`OVERWRITTEN`, `INFO_CONFIG_OVERWRITE`, `ERR_CONFIG_INVALID`), and — in
+> `--yes` — `UNMAPPED_MODEL` / `STALE_MODEL_ID` (unless
+> `--allow-unmapped-models`). In particular the MCP unstrippable-credential row
+> is emitted with `error` severity but is **not** exit-fatal: the run still
+> writes and the row stays visible in the report. Aligning that anomaly is a
+> tracked follow-up.
 
 ### Team namespacing and selection
 
@@ -304,7 +375,7 @@ Rejections use named error codes and appear in the report/stderr:
 | `ERR_DEST_OUTSIDE_REPO` | Project scope only: dest must resolve inside the repository root. |
 | `ERR_DEST_IN_OPENCODE` | Project scope only: dest inside (or equal to) `.opencode/` is rejected outright. |
 | `ERR_NO_CONFIG_HOME` | User scope only: no `--dest` and neither `XDG_CONFIG_HOME` nor `HOME` resolves a config home. |
-| `ERR_WRITE_INSIDE_OUR_OPENCODE` | The toolkit's own `.opencode/` is never writable, in either scope. |
+| `ERR_WRITE_INSIDE_OUR_OPENCODE` | This workspace's own `.opencode/` is never writable, in either scope. |
 | `ERR_SOURCE_IS_REPO_ROOT` | Confirmation, not an error: source equal to the repo root needs explicit confirmation interactively and is refused in `--yes`. |
 
 Every write target is re-checked against the validated dest root before writing.
@@ -312,9 +383,9 @@ Every write target is re-checked against the validated dest root before writing.
 ## Boundaries (invariants)
 
 - `copilot-source/` is read-only; the toolkit never mutates it.
-- The toolkit never writes inside the toolkit's own `.opencode/` — rejected in both
-  scopes via `ERR_WRITE_INSIDE_OUR_OPENCODE`; review the generated output and
-  merge it into your project's `.opencode/` config yourself.
+- The toolkit never writes inside `.opencode/` (the kit) — rejected in both
+  scopes via `ERR_WRITE_INSIDE_OUR_OPENCODE`; merging the output into your
+  `.opencode/` config happens afterwards, on your side.
 - All output goes under the resolved write root (`--dest`; project default
   `migrated/`, user default `~/.config/opencode`).
 - User scope never creates or modifies `<config-home>/AGENTS.md`; always-on rules

@@ -10,7 +10,7 @@ Full reference: `toolkit/README.md`.
 ## Commands
 
 ```bash
-npm --prefix toolkit test            # vitest (206 tests, 24 files)
+npm --prefix toolkit test            # vitest (251 tests, 26 files)
 npm --prefix toolkit run typecheck   # tsc --noEmit
 npm --prefix toolkit run lint        # eslint
 npx --prefix toolkit tsx toolkit/bin/migrate.ts            # interactive (default)
@@ -37,13 +37,35 @@ blocker, and a colliding `provider.<id>`/`mcp.<id>` in an existing user-scope
 unless `--allow-overwrite` is passed. A non-JSONC existing `opencode.json`
 emits `ERR_CONFIG_INVALID` and aborts with zero writes in either mode.
 
+## Manual steps (what needs a human)
+
+Every run that reaches the report stage prints a final `Manual steps required
+(N):` summary — all modes, `--dry-run` included — and `_migration-report.md`
+repeats it under `## Manual steps required` (with an explicit none line when the
+run was fully automatic). `_migration-report.json` adds
+`summary.manualSteps { mechanical, decision }` plus a `manualSteps[]` array;
+`summary.counts` is unchanged. Manual work is either **mechanical**
+(`SECRET_NORMALIZED`, `OVERWRITTEN`, `INFO_CONFIG_OVERWRITE`) or a **decision**
+(`UNMAPPED_MODEL`, `STALE_MODEL_ID`, `MANUAL_REVIEW`, `MANUAL_REWRITE`,
+`PARSE_FALLBACK`, `BUDGET_EXCEEDED`, `EXCLUDED_AGENT`, `MULTI_TEAM`,
+`TEAM_SELECTION`, `ERR_PLUGIN_RECOMMENDATIONS`, `ERR_CONFIG_INVALID`).
+
+Always manual, after every run: review the generated output and merge it into
+your project's `.opencode/` config yourself; merge the project-scope
+`fragments/*.fragment.json` you want; fill the `.env.example` placeholders with
+real values; run `check-duplicates` before merging skills. The toolkit never
+writes `.opencode/`. Severity is not the exit code: an error-severity row can
+still exit `0` (MCP unstrippable credentials). Canonical per-code action table
+and exit-code note:
+[`toolkit/README.md` → Manual steps](../toolkit/README.md#manual-steps-what-needs-a-human).
+
 ## Target scope
 
 `--scope user|project` (default `project`) selects the write root:
 
 - `project` — `resolve(repoRoot, --dest ?? "migrated")`, layout mirrors a
-  project OpenCode tree (`commands/` plural); a staging area to review before
-  merging into your project's `.opencode/` config.
+  project OpenCode tree (`commands/` plural); the staging directory you review
+  before merging into your project config.
 - `user` — the OpenCode config home (`--dest` override > `XDG_CONFIG_HOME` →
   `${XDG}/opencode` > `~/.config/opencode`; none → `ERR_NO_CONFIG_HOME`).
   Commands land in `command/` (singular) via per-scope constants
@@ -204,7 +226,7 @@ hooks need a manual plugin rewrite).
 | `ERR_DEST_OUTSIDE_REPO` | Project scope only: dest must resolve inside the repository root. |
 | `ERR_DEST_IN_OPENCODE` | Project scope only: dest inside (or equal to) `.opencode/` is rejected outright. |
 | `ERR_NO_CONFIG_HOME` | User scope only: no `--dest` and no resolvable `XDG_CONFIG_HOME`/`HOME`. |
-| `ERR_WRITE_INSIDE_OUR_OPENCODE` | The toolkit's own `.opencode/` is never writable, in either scope. |
+| `ERR_WRITE_INSIDE_OUR_OPENCODE` | This workspace's own `.opencode/` is never writable, in either scope. |
 | `ERR_SOURCE_IS_REPO_ROOT` | Confirmation, not error: interactive asks, `--yes` refuses. |
 
 Every write target is re-checked against the validated dest root before writing.
@@ -251,9 +273,9 @@ Every write target is re-checked against the validated dest root before writing.
 ## Boundary (invariants)
 
 - `copilot-source/` is read-only; the toolkit never mutates it.
-- The toolkit **never writes inside the toolkit's own `.opencode/`** (rejected in
-  both scopes via `ERR_WRITE_INSIDE_OUR_OPENCODE`); review the generated output and
-  merge it into your project's `.opencode/` config yourself.
+- The toolkit **never writes inside your project's `.opencode/`** (rejected in
+  both scopes via `ERR_WRITE_INSIDE_OUR_OPENCODE`); merging the output into your
+  `.opencode/` config happens on your side.
 - All output goes under the resolved write root (`--dest`; project default
   `migrated/`, user default `~/.config/opencode`); no plaintext secrets are emitted.
 - User scope never creates or modifies `<config-home>/AGENTS.md`; always-on rules

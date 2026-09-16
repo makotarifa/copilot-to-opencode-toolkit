@@ -55,13 +55,47 @@ describe("detectConflicts", () => {
 describe("migration report", () => {
   test("renders JSON with a summary and counts rows", () => {
     const parsed = JSON.parse(renderReportJson({ rows: [ROW], warnings: ["W"] })) as {
-      summary: { rows: number; warnings: number; counts: Record<string, number> };
+      summary: {
+        rows: number;
+        warnings: number;
+        counts: Record<string, number>;
+        manualSteps: { mechanical: number; decision: number };
+      };
       rows: unknown[];
     };
 
-    expect(parsed.summary).toEqual({ rows: 1, warnings: 1, counts: { [ReportCode.Migrated]: 1 } });
+    expect(parsed.summary).toEqual({
+      rows: 1,
+      warnings: 1,
+      counts: { [ReportCode.Migrated]: 1 },
+      manualSteps: { mechanical: 0, decision: 0 },
+    });
     expect(parsed.rows).toHaveLength(1);
     expect(countRows([ROW])).toEqual({ [ReportCode.Migrated]: 1 });
+  });
+
+  test("renders a Manual steps required section listing manual rows", () => {
+    const manualRows = [{ ...ROW, code: ReportCode.UnmappedModel }];
+    const markdown = renderReportMarkdown({ rows: manualRows, warnings: [] });
+
+    expect(markdown).toContain("## Manual steps required");
+    expect(markdown).toContain("UNMAPPED_MODEL");
+    expect(markdown).not.toContain("completed every step automatically");
+
+    const parsed = JSON.parse(renderReportJson({ rows: manualRows, warnings: [] })) as {
+      summary: { manualSteps: { mechanical: number; decision: number } };
+      manualSteps: { codes: string[]; sources: string[] }[];
+    };
+    expect(parsed.summary.manualSteps).toEqual({ mechanical: 0, decision: 1 });
+    expect(parsed.manualSteps[0]?.codes).toEqual([ReportCode.UnmappedModel]);
+    expect(parsed.manualSteps[0]?.sources).toEqual(["a"]);
+  });
+
+  test("renders an explicit none line when no manual step is required", () => {
+    const markdown = renderReportMarkdown({ rows: [ROW], warnings: [] });
+
+    expect(markdown).toContain("## Manual steps required");
+    expect(markdown).toContain("completed every step automatically");
   });
 
   test("renders Markdown and detects blocking error rows", () => {

@@ -36,5 +36,3 @@ export const TARGET_SCOPE_FLAG = "--scope";
 export const XDG_CONFIG_DIR_NAME = ".config";
 export const XDG_CONFIG_SUBDIR = "opencode";
 export const ATOMIC_TMP_SUFFIX = ".tmp";
-
-export const MANUAL_REWRITE_REPORT_LABEL = "manual rewrite";

@@ -5,6 +5,7 @@ import { defaultUserConfigHome, resolveScope, TargetScope } from "../domain/targ
 import { renderReportMarkdown } from "../report/migration-report";
 import { PathValidationResult, ResolvedPaths, validatePaths } from "../safety/path-validator";
 import { CliOptions, formatUsage, parseFlags } from "./flag-parser";
+import { printManualStepsSummary } from "./manual-steps-summary";
 import { printModelSummary } from "./model-summary";
 import { InteractivePrompts, interactivePrompts } from "./prompts";
 import { defaultCliHome, findRepoRoot } from "./repo-root";
@@ -183,5 +184,6 @@ export async function runCli(argv: readonly string[], overrides: RunOverrides = 
       printModelSummary(result.report);
     }
   }
+  printManualStepsSummary(result.report);
   return result.exitCode;
 }

@@ -8,7 +8,6 @@ export enum ReportSeverity {
 
 export enum ReportCode {
   Migrated = "MIGRATED",
-  Defaults = "DEFAULTS",
   ModelMapped = "MODEL_MAPPED",
   ModelFallback = "MODEL_FALLBACK",
   UnmappedModel = "UNMAPPED_MODEL",
@@ -23,7 +22,6 @@ export enum ReportCode {
   MultiTeam = "MULTI_TEAM",
   TeamSelection = "TEAM_SELECTION",
   PluginRecommendations = "ERR_PLUGIN_RECOMMENDATIONS",
-  Skipped = "SKIPPED",
   Overwritten = "OVERWRITTEN",
   ConfigOverwrite = "INFO_CONFIG_OVERWRITE",
   ConfigInvalid = "ERR_CONFIG_INVALID",

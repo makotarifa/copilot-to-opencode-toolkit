@@ -1,4 +1,5 @@
 import { ReportCode, ReportRow, ReportSeverity } from "../domain/report";
+import { deriveManualSteps, ManualStep, ManualStepKind } from "./manual-steps";
 
 export interface MigrationReport {
   readonly rows: readonly ReportRow[];
@@ -23,12 +24,29 @@ function escapeCell(value: string): string {
   return value.split("|").join("\\|");
 }
 
+function manualStepLine(step: ManualStep, index: number): string {
+  return `${index + 1}. **[${step.kind}]** \`${step.title}\` — ${step.detail} (${step.sources.length} source(s))`;
+}
+
+function renderManualStepsSection(steps: readonly ManualStep[]): string[] {
+  if (steps.length === 0) {
+    return ["- _(none — the toolkit completed every step automatically)_"];
+  }
+  return steps.map((step, index) => manualStepLine(step, index));
+}
+
+function countStepsOfKind(steps: readonly ManualStep[], kind: ManualStepKind): number {
+  return steps.filter((step) => step.kind === kind).length;
+}
+
 export function renderReportMarkdown(report: MigrationReport): string {
+  const manualSteps = deriveManualSteps(report.rows);
   const lines = [
     "# Copilot to OpenCode migration report",
     "",
     `- Rows: ${report.rows.length}`,
     `- Warnings: ${report.warnings.length}`,
+    `- Manual steps: ${manualSteps.length}`,
     "",
     "## Rows",
     "",
@@ -40,6 +58,8 @@ export function renderReportMarkdown(report: MigrationReport): string {
       `| ${row.code} | ${row.severity} | ${row.family} | ${escapeCell(row.source)} | ${escapeCell(row.dest ?? "")} | ${escapeCell(row.message)} |`,
     );
   }
+  lines.push("", "## Manual steps required", "");
+  lines.push(...renderManualStepsSection(manualSteps));
   lines.push("", "## Warnings", "");
   lines.push(...(report.warnings.length > 0 ? report.warnings.map((warning) => `- ${warning}`) : ["- _(none)_"]));
   lines.push("");
@@ -47,9 +67,20 @@ export function renderReportMarkdown(report: MigrationReport): string {
 }
 
 export function renderReportJson(report: MigrationReport): string {
-  return `${JSON.stringify(
-    { summary: { rows: report.rows.length, warnings: report.warnings.length, counts: countRows(report.rows) }, rows: report.rows, warnings: report.warnings },
-    null,
-    2,
-  )}\n`;
+  const manualSteps = deriveManualSteps(report.rows);
+  const payload = {
+    summary: {
+      rows: report.rows.length,
+      warnings: report.warnings.length,
+      counts: countRows(report.rows),
+      manualSteps: {
+        mechanical: countStepsOfKind(manualSteps, ManualStepKind.Mechanical),
+        decision: countStepsOfKind(manualSteps, ManualStepKind.Decision),
+      },
+    },
+    rows: report.rows,
+    warnings: report.warnings,
+    manualSteps,
+  };
+  return `${JSON.stringify(payload, null, 2)}\n`;
 }

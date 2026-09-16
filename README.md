@@ -127,6 +127,28 @@ One family per migrator:
 - **provider** — `fragments/opencode-provider.fragment.json` with `{env:VAR}` keys.
 - **hooks** — stub: emits `MANUAL_REWRITE` warnings and migrates zero files (they need a manual plugin rewrite).
 
+## Manual steps (what needs a human)
+
+Every run that reaches the report stage prints a final `Manual steps required
+(N):` summary — in all modes, `--dry-run` included — and repeats it in
+`_migration-report.md` under `## Manual steps required`
+(`_migration-report.json` adds `summary.manualSteps { mechanical, decision }`
+and a `manualSteps[]` array). Steps are either **mechanical** (a deterministic
+action, e.g. `SECRET_NORMALIZED`, `OVERWRITTEN`, `INFO_CONFIG_OVERWRITE`) or a
+**decision** that needs human judgement (e.g. `UNMAPPED_MODEL`, `MANUAL_REVIEW`,
+`BUDGET_EXCEEDED`).
+
+Always manual, after every run:
+
+1. Review the generated output and merge it into your project's `.opencode/`
+   config yourself — the toolkit never writes your `.opencode/` or `AGENTS.md`.
+2. Project scope only: merge the `fragments/*.fragment.json` you want into
+   `opencode.json` (user scope merges them automatically).
+3. Fill the `.env.example` placeholders with real values.
+
+The canonical per-code action table, plus the exit-code note, is in
+[toolkit/README.md](toolkit/README.md#manual-steps-what-needs-a-human).
+
 ## Teams and recommended plugins
 
 ### Team namespacing and `--team`

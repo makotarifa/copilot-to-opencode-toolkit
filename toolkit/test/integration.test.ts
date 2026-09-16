@@ -16,8 +16,11 @@ const COPIOLOT_FIXTURE = join(FIXTURES, "copilot");
 const TEAMS_FIXTURE = join(FIXTURES, "copilot-teams");
 const USER_CONFIG_FIXTURE = join(FIXTURES, "user-config");
 const REPO_DEFAULTS = [join(TOOLKIT_DIR, "..", "copilot-source"), join(TOOLKIT_DIR, "..", "migrated")];
+// Refreshed when the "## Manual steps required" section and the additive
+// manualSteps JSON data were added to _migration-report.{md,json}; both report
+// files live inside the hashed tree, so the hash changes by design.
 const GOLDEN_PROJECT_TREE_HASH =
-  "8bd7fc5ddc55dd15482d9e4861431d9f45b7bd59d64cbc70b5cfea9598ff1258";
+  "8b55be71d849b383fcc965afdeef98074a68328b918e07522d670c4ea9c8143b";
 const tempDirs: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -211,7 +214,10 @@ describe("end-to-end migration", () => {
     expect(messages).toContain("`agent`");
     expect(messages).toContain("`reviewer`");
     expect(messages).toContain("`docs-writer`");
-    expect(await readFile(join(dest, "_migration-report.md"), "utf8")).toContain("UNKNOWN_AGENT_REF:");
+    const reportMarkdown = await readFile(join(dest, "_migration-report.md"), "utf8");
+    expect(reportMarkdown).toContain("UNKNOWN_AGENT_REF:");
+    expect(reportMarkdown).toContain("## Manual steps required");
+    expect(reportMarkdown).toContain("MANUAL_REVIEW");
   });
 });
 
