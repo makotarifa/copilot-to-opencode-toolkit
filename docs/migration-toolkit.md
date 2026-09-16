@@ -1,8 +1,9 @@
 # migration-toolkit.md — Interactive Copilot → OpenCode migration toolkit
 
 `toolkit/` is a self-contained Node.js 22 + TypeScript (strict) CLI that
-migrates a frozen Copilot workspace into OpenCode-ready artifacts under the
-resolved `--dest` (default `migrated/`). Entry: `toolkit/bin/migrate.ts`. Config:
+automates step 2 of the migration flow (`@docs/architecture.md`): it migrates
+a frozen Copilot workspace into OpenCode-ready artifacts under the resolved
+`--dest` (default `migrated/`). Entry: `toolkit/bin/migrate.ts`. Config:
 `toolkit/package.json`, `toolkit/tsconfig.json`, `toolkit/model-map.json`.
 Full reference: `toolkit/README.md`.
 
@@ -41,8 +42,8 @@ emits `ERR_CONFIG_INVALID` and aborts with zero writes in either mode.
 `--scope user|project` (default `project`) selects the write root:
 
 - `project` — `resolve(repoRoot, --dest ?? "migrated")`, layout mirrors a
-  project OpenCode tree (`commands/` plural); review the generated tree and
-  merge it into your project's `.opencode/` config yourself.
+  project OpenCode tree (`commands/` plural); a staging area to review before
+  merging into your project's `.opencode/` config.
 - `user` — the OpenCode config home (`--dest` override > `XDG_CONFIG_HOME` →
   `${XDG}/opencode` > `~/.config/opencode`; none → `ERR_NO_CONFIG_HOME`).
   Commands land in `command/` (singular) via per-scope constants
@@ -66,8 +67,10 @@ Copilot workspaces can organise artifacts per team
 (`github-copilot/<team>/{agents,instructions,prompts,skills}/…`). The toolkit
 preserves that hierarchy instead of flattening by basename: the **namespace** is
 the path between the source root and the family folder (`agents|prompts|instructions|skills`),
-excluding infra segments (`github-copilot`, `.github`). Classic layouts with no
-team folder (`.github/instructions/x`, root `prompts/y`) keep the flat output.
+minus every **infra segment** — any segment whose name starts with `.`
+(`.github`, `.config`, …). The rule is name-agnostic: no team or container name
+is hardcoded, and every named container is kept verbatim. Classic layouts with
+no team folder (`.github/instructions/x`, root `prompts/y`) keep the flat output.
 
 ```text
 neo/instructions/generic.instructions.md            → instructions/neo/generic.md
@@ -98,6 +101,31 @@ Teams span every family, so selection filters the whole run:
   emits a `TEAM_SELECTION` row and exits `1`.
 
 At user scope only the selected teams' entries are merged into `opencode.json`.
+
+### Agent reference rewriting
+
+OpenCode derives an agent's ID from the path after `agents/`, so a namespaced
+agent registers as `common/jira-reviewer`, not `jira-reviewer`. The session
+builds one `AgentReferenceIndex` (source basename → namespaced ID) from the
+agents selected for migration, then rewrites every agent-name site the toolkit
+itself emits: the prompt frontmatter `agent:`, the generated `task(agent="…")`
+blocks (prompt delegation + agent handoffs), the `excludeAgent` note and the
+`fragments/excluded-agents.md` table.
+
+Resolution is never a silent guess:
+
+- **resolved** — exactly one migrated agent carries the basename → emit the
+  namespaced ID (`agent: common/jira-reviewer`);
+- **ambiguous** — two selected teams share the basename → keep the reference
+  verbatim and emit one `MANUAL_REVIEW` row prefixed `AMBIGUOUS_AGENT_REF:` with
+  the candidate IDs;
+- **unknown** — the basename matches no migrated agent (e.g. a user-scope agent
+  outside the selection) → keep it verbatim and emit `UNKNOWN_AGENT_REF:` in a
+  `MANUAL_REVIEW` row.
+
+Because the index is derived from the same `namespaceOf()` used to write the
+files, emitted IDs and written paths cannot diverge; artifact bodies copied
+verbatim are never rewritten.
 
 ## Model resolution
 
@@ -185,8 +213,8 @@ Every write target is re-checked against the validated dest root before writing.
 
 - **Provider:** emits `fragments/opencode-provider.fragment.json` using
   `{env:VAR}` (plaintext keys replaced, baseURL credentials stripped);
-  never touches `.opencode/opencode.json` — merge the emitted fragment into
-  your OpenCode config yourself once you have reviewed it.
+  never touches `.opencode/opencode.json` — merge the fragment into your
+  project's config yourself.
 - **MCP:** `${input:var}` and `${env:VAR}` → `{env:VAR}` into
   `fragments/mcp-snippet.json` (entries `enabled: false` by default);
   embedded-credential URLs are stripped, unstrippable cases fail closed to
@@ -196,10 +224,12 @@ Every write target is re-checked against the validated dest root before writing.
   (namespace empty for classic layouts; verbatim body + advisory `Scope:` header
   from `applyTo` + notes) plus `fragments/instructions-snippet.json`, whose
   entries and the demoted lazy-load pointers in
-  `fragments/agents-index-snippet.md` target the eventual
+  `fragments/agents-index-snippet.md` target the post-promotion
   `.opencode/instructions/<namespace>/<n>.md` location; the default snippet glob
   is `**/*.md` (recursive, so namespaced subdirectories are covered);
-  `excludeAgent` → `fragments/excluded-agents.md`; past ~5 files / 8 kB the
+  `excludeAgent` → `fragments/excluded-agents.md`, rewritten through the
+  `AgentReferenceIndex` (unresolved references surface `*_AGENT_REF`
+  `MANUAL_REVIEW` rows); past ~5 files / 8 kB the
   largest files are demoted. Never writes any `AGENTS.md`.
 - **Recommended plugins:** `src/config/recommended-plugins.json` ships the
   curated plugin set (`{ "version": 1, "plugins": [{ "kind": "npm"|"local",
@@ -221,10 +251,14 @@ Every write target is re-checked against the validated dest root before writing.
 ## Boundary (invariants)
 
 - `copilot-source/` is read-only; the toolkit never mutates it.
-- The toolkit **never writes inside its own `.opencode/`** (rejected in both
-  scopes via `ERR_WRITE_INSIDE_OUR_OPENCODE`); you review the output and merge
-  it into your project's `.opencode/` config yourself.
+- The toolkit **never writes inside the toolkit's own `.opencode/`** (rejected in
+  both scopes via `ERR_WRITE_INSIDE_OUR_OPENCODE`); review the generated output and
+  merge it into your project's `.opencode/` config yourself.
 - All output goes under the resolved write root (`--dest`; project default
   `migrated/`, user default `~/.config/opencode`); no plaintext secrets are emitted.
 - User scope never creates or modifies `<config-home>/AGENTS.md`; always-on rules
   go through the `instructions[]` merge into the global `opencode.json`.
+
+The public [`copilot-to-opencode-toolkit`](https://github.com/makotarifa/copilot-to-opencode-toolkit)
+export is a clean snapshot, not a fork: the next re-export picks up the
+name-agnostic namespace rule and the agent-reference rewriting documented above.

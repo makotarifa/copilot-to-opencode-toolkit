@@ -3,11 +3,13 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { ArtifactFamily } from "../src/domain/artifact-family";
+import { ParsedCopilotArtifact } from "../src/domain/copilot-artifact";
 import { PromptPattern } from "../src/domain/prompt-pattern";
 import { ReportCode } from "../src/domain/report";
 import { ModelCatalog } from "../src/model/model-catalog";
 import { createModelResolver } from "../src/model/model-resolver";
 import { PromptsMigrator } from "../src/transform/prompts-migrator";
+import { AgentReferenceIndex } from "../src/transform/reference-index";
 import { loadMarkdownArtifact } from "./helpers/artifact";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
@@ -28,6 +30,14 @@ async function loadReviewPrompt() {
     ".github/prompts/review.prompt.md",
     ArtifactFamily.Prompt,
   );
+}
+
+function agentArtifact(relativePath: string): ParsedCopilotArtifact {
+  return {
+    inventory: { family: ArtifactFamily.Agent, absolutePath: relativePath, relativePath, sha: "x" },
+    frontmatter: {},
+    body: "",
+  };
 }
 
 describe("PromptsMigrator", () => {
@@ -83,6 +93,38 @@ describe("PromptsMigrator", () => {
     expect(content).toContain("subtask: true");
     expect(content).not.toContain("## Delegation");
     expect(content).toContain("A (`subtask: true`)");
+  });
+
+  test("rewrites the owning agent reference to the namespaced id when resolved", async () => {
+    const artifact = await loadReviewPrompt();
+    const agentReferences = new AgentReferenceIndex([agentArtifact("common/agents/agent.agent.md")]);
+
+    const result = await new PromptsMigrator().transform(artifact, { destRoot: DEST_ROOT, agentReferences });
+    const content = result.files[0]?.content ?? "";
+
+    expect(content).toContain("agent: common/agent");
+    expect(content).toContain('agent="common/agent"');
+    expect(content).toContain("Owning agent: `common/agent`");
+    expect(result.rows.some((row) => row.code === ReportCode.ManualReview)).toBe(false);
+  });
+
+  test("keeps an ambiguous owning agent reference verbatim and flags it", async () => {
+    const artifact = await loadReviewPrompt();
+    const agentReferences = new AgentReferenceIndex([
+      agentArtifact("common/agents/agent.agent.md"),
+      agentArtifact("neo/agents/agent.agent.md"),
+    ]);
+
+    const result = await new PromptsMigrator().transform(artifact, { destRoot: DEST_ROOT, agentReferences });
+    const content = result.files[0]?.content ?? "";
+
+    expect(content).toContain("agent: agent");
+    expect(content).toContain('agent="agent"');
+    expect(
+      result.rows.some(
+        (row) => row.code === ReportCode.ManualReview && row.message.includes("AMBIGUOUS_AGENT_REF:"),
+      ),
+    ).toBe(true);
   });
 
   test("resolves prompt models and preserves the original array in notes", async () => {

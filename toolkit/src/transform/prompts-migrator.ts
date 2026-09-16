@@ -9,6 +9,7 @@ import { modelResultRows } from "../model/model-report";
 import { getString } from "../parse/frontmatter-values";
 import { serializeFrontmatter } from "../parse/frontmatter-serializer";
 import { Migrator, TransformContext, TransformResult } from "./migrator";
+import { rewriteAgentReference } from "./reference-index";
 import { namespaceOf, toModelValue, withNamespace } from "./transform-helpers";
 
 const PROMPT_SUFFIX = ".prompt.md";
@@ -126,31 +127,37 @@ async function resolvePromptModel(
 async function renderPrompt(artifact: ParsedCopilotArtifact, context: TransformContext): Promise<PromptRender> {
   const pattern = context.promptPattern ?? DEFAULT_PROMPT_PATTERN;
   const outputName = outputNameOf(artifact.inventory.relativePath);
+  const source = artifact.inventory.relativePath;
   const agent = getString(artifact.frontmatter, AGENT_KEY);
+  const agentRewrite =
+    agent === undefined
+      ? undefined
+      : rewriteAgentReference(context.agentReferences, agent, ArtifactFamily.Prompt, source);
+  const agentId = agentRewrite?.reference;
   const argumentHint = getString(artifact.frontmatter, ARGUMENT_HINT_KEY);
   const description = getString(artifact.frontmatter, DESCRIPTION_KEY);
   const model = await resolvePromptModel(artifact, context);
   const warnings: string[] = [...model.warnings];
 
   if (agent === undefined) {
-    warnings.push(`Prompt \`${artifact.inventory.relativePath}\` has no owning agent; no delegation block was emitted.`);
+    warnings.push(`Prompt \`${source}\` has no owning agent; no delegation block was emitted.`);
   }
   if (pattern === PromptPattern.PatternA && agent === undefined) {
-    warnings.push(`Prompt \`${artifact.inventory.relativePath}\` cannot use pattern A without an owning agent.`);
+    warnings.push(`Prompt \`${source}\` cannot use pattern A without an owning agent.`);
   }
 
-  const frontmatter = buildFrontmatter(description, agent, pattern, model.resolved);
+  const frontmatter = buildFrontmatter(description, agentId, pattern, model.resolved);
   const sections = [artifact.body];
   if (argumentHint !== undefined) {
     sections.push(buildUsageSection(outputName, argumentHint));
   }
-  if (pattern === PromptPattern.PatternB && agent !== undefined) {
-    sections.push(buildDelegationSection(agent));
+  if (pattern === PromptPattern.PatternB && agentId !== undefined) {
+    sections.push(buildDelegationSection(agentId));
   }
 
-  const notes = buildNotes(artifact, pattern, agent, argumentHint, model.notes);
+  const notes = buildNotes(artifact, pattern, agentId, argumentHint, model.notes);
   const content = `${serializeFrontmatter(frontmatter)}${appendOpenCodeNotes(sections.join("\n"), notes)}`;
-  return { outputName, content, rows: model.rows, warnings };
+  return { outputName, content, rows: [...model.rows, ...(agentRewrite?.rows ?? [])], warnings };
 }
 
 export class PromptsMigrator implements Migrator {

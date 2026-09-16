@@ -15,10 +15,12 @@ import {
   InstructionRecord,
   instructionOutputPath,
   renderInstructionContent,
+  resolveExcludeAgent,
   toInstructionRecord,
 } from "./instructions-migrator";
 import { BudgetEntry, decideDemoted, DEFAULT_INSTRUCTIONS_BUDGET, InstructionsBudget } from "./instructions-budget";
 import { sharedPrefixSlug } from "./instructions-prefix";
+import { AgentReferenceIndex } from "./reference-index";
 
 export { DEFAULT_INSTRUCTIONS_BUDGET } from "./instructions-budget";
 export type { InstructionsBudget } from "./instructions-budget";
@@ -32,6 +34,7 @@ export interface InstructionsBundleOptions {
   readonly budget?: InstructionsBudget;
   readonly overrideBudget?: boolean;
   readonly promotedInstructionsDir?: string;
+  readonly agentReferences?: AgentReferenceIndex;
 }
 
 export interface InstructionsBundle {
@@ -49,6 +52,7 @@ interface BundleEntry extends BudgetEntry {
 function buildEntries(
   artifacts: readonly ParsedCopilotArtifact[],
   prefixSlug: string | undefined,
+  agentReferences: AgentReferenceIndex | undefined,
 ): BundleEntry[] {
   return artifacts.map((artifact) => {
     const record = toInstructionRecord(artifact);
@@ -56,7 +60,7 @@ function buildEntries(
     const outputName = instructionOutputPath(record, INSTRUCTIONS_DIR_NAME, fileBase).slice(
       INSTRUCTIONS_DIR_NAME.length + 1,
     );
-    const content = renderInstructionContent(artifact);
+    const content = renderInstructionContent(artifact, agentReferences);
     return { artifact, record, outputName, content, bytes: Buffer.byteLength(content, "utf8") };
   });
 }
@@ -97,7 +101,10 @@ function buildIndex(
   return { relativePath: `${FRAGMENTS_DIR_NAME}/${AGENTS_INDEX_SNIPPET_FILE}`, content: lines.join("\n") };
 }
 
-function buildExcludedAgents(entries: readonly BundleEntry[]): MigratedFile {
+function buildExcludedAgents(
+  entries: readonly BundleEntry[],
+  agentReferences: AgentReferenceIndex | undefined,
+): MigratedFile {
   const withExclusions = entries.filter((entry) => entry.record.excludeAgent !== undefined);
   const lines = [
     "# Excluded agents",
@@ -111,9 +118,11 @@ function buildExcludedAgents(entries: readonly BundleEntry[]): MigratedFile {
     lines.push("| _(none)_ | | |");
   }
   for (const entry of withExclusions) {
-    lines.push(
-      `| \`${entry.record.source}\` | \`${entry.record.excludeAgent}\` | post-/review \`agent.<n>.permission\` |`,
-    );
+    const excluded = resolveExcludeAgent(entry.record, agentReferences);
+    if (excluded === undefined) {
+      continue;
+    }
+    lines.push(`| \`${entry.record.source}\` | \`${excluded.reference}\` | post-/review \`agent.<n>.permission\` |`);
   }
   lines.push("");
   return { relativePath: `${FRAGMENTS_DIR_NAME}/${EXCLUDED_AGENTS_FILE}`, content: lines.join("\n") };
@@ -135,7 +144,7 @@ export function buildInstructionsBundle(
   options: InstructionsBundleOptions,
 ): InstructionsBundle {
   const prefixSlug = sharedPrefixSlug(artifacts.map(toInstructionRecord));
-  const entries = buildEntries(artifacts, prefixSlug);
+  const entries = buildEntries(artifacts, prefixSlug, options.agentReferences);
   const budget = options.budget ?? DEFAULT_INSTRUCTIONS_BUDGET;
   const promotedInstructionsDir = options.promotedInstructionsDir ?? PROMOTED_INSTRUCTIONS_DIR;
   const demoted =
@@ -148,13 +157,15 @@ export function buildInstructionsBundle(
     content: entry.content,
   }));
   for (const entry of entries) {
-    rows.push(...buildInstructionRows(entry.record, `${INSTRUCTIONS_DIR_NAME}/${entry.outputName}`));
+    rows.push(
+      ...buildInstructionRows(entry.record, `${INSTRUCTIONS_DIR_NAME}/${entry.outputName}`, options.agentReferences),
+    );
   }
 
   files.push(buildSnippet(entries, demoted, prefixSlug, promotedInstructionsDir));
   rows.push(fragmentRow(`${FRAGMENTS_DIR_NAME}/${INSTRUCTIONS_SNIPPET_FILE}`, "instructions[] fragment generated."));
 
-  files.push(buildExcludedAgents(entries));
+  files.push(buildExcludedAgents(entries, options.agentReferences));
   rows.push(fragmentRow(`${FRAGMENTS_DIR_NAME}/${EXCLUDED_AGENTS_FILE}`, "excluded-agents table generated."));
 
   if (demoted.size > 0) {

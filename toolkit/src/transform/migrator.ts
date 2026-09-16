@@ -7,12 +7,14 @@ import { ProviderPreview } from "../domain/provider-preview";
 import { ReportRow } from "../domain/report";
 import { TargetScope } from "../domain/target-scope";
 import { ModelResolverPort } from "../model/model-resolver";
+import { AgentReferenceIndex } from "./reference-index";
 
 export interface TransformContext {
   readonly destRoot: string;
   readonly scope?: TargetScope;
   readonly promptPattern?: PromptPattern;
   readonly models?: ModelResolverPort;
+  readonly agentReferences?: AgentReferenceIndex;
 }
 
 export interface TransformResult {

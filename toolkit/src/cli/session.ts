@@ -12,6 +12,7 @@ import {
   TeamSelectionMode,
 } from "../domain/team-selection";
 import { TargetScope } from "../domain/target-scope";
+import { AgentReferenceIndex } from "../transform/reference-index";
 import { namespaceOf } from "../transform/transform-helpers";
 import {
   ENV_EXAMPLE_FILE,
@@ -94,6 +95,9 @@ export async function runSession(input: SessionInput): Promise<SessionResult> {
   const filtered = selected.filter((artifact) =>
     isTeamSelected(namespaceOf(artifact.inventory.relativePath), selection),
   );
+  const agentReferenceIndex = new AgentReferenceIndex(
+    filtered.filter((artifact) => artifact.inventory.family === ArtifactFamily.Agent),
+  );
   rows.push(...unknownTeamRows(resolution.unknownTeams));
   if (hasNoMatchingExplicitTeam(resolution)) {
     rows.push(teamSelectionErrorRow(resolution));
@@ -119,12 +123,17 @@ export async function runSession(input: SessionInput): Promise<SessionResult> {
   const others = filtered.filter((artifact) => artifact.inventory.family !== ArtifactFamily.Instructions);
 
   if (instructions.length > 0) {
-    const aggregate = await transformInstructions(instructions, input, prompts);
+    const aggregate = await transformInstructions(instructions, input, prompts, agentReferenceIndex);
     files.push(...aggregate.files);
     rows.push(...aggregate.rows);
     warnings.push(...aggregate.warnings);
   }
-  const othersAggregate = await transformOthers(others, registry, { ...input, dependencies: { ...input.dependencies, models } });
+  const othersAggregate = await transformOthers(
+    others,
+    registry,
+    { ...input, dependencies: { ...input.dependencies, models } },
+    agentReferenceIndex,
+  );
   files.push(...othersAggregate.files);
   rows.push(...othersAggregate.rows);
   warnings.push(...othersAggregate.warnings);

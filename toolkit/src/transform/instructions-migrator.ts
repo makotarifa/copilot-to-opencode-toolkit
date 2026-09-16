@@ -5,6 +5,7 @@ import { ReportCode, ReportRow, ReportSeverity } from "../domain/report";
 import { ADVISORY_SCOPE_PREFIX } from "../constants";
 import { getString } from "../parse/frontmatter-values";
 import { Migrator, TransformContext, TransformResult } from "./migrator";
+import { AgentReferenceIndex, AgentReferenceRewrite, rewriteAgentReference } from "./reference-index";
 import { namespaceOf, withNamespace } from "./transform-helpers";
 
 const INSTRUCTIONS_DIR_NAME = "instructions";
@@ -60,7 +61,21 @@ export function buildScopeHeader(applyTo: string | undefined): string {
   return `${ADVISORY_SCOPE_PREFIX} \`${applyTo}\` (ported from Copilot applyTo; advisory, not enforced)`;
 }
 
-export function buildInstructionNotes(record: InstructionRecord): OpenCodeNote[] {
+export function resolveExcludeAgent(
+  record: InstructionRecord,
+  agentReferences: AgentReferenceIndex | undefined,
+  relativePath?: string,
+): AgentReferenceRewrite | undefined {
+  if (record.excludeAgent === undefined) {
+    return undefined;
+  }
+  return rewriteAgentReference(agentReferences, record.excludeAgent, ArtifactFamily.Instructions, record.source, relativePath);
+}
+
+export function buildInstructionNotes(
+  record: InstructionRecord,
+  agentReferences?: AgentReferenceIndex,
+): OpenCodeNote[] {
   const notes: OpenCodeNote[] = [
     { label: "Source", value: `\`${record.source}\`` },
     { label: "Body", value: "preserved verbatim; Copilot frontmatter stripped" },
@@ -71,22 +86,30 @@ export function buildInstructionNotes(record: InstructionRecord): OpenCodeNote[]
       value: `\`${record.applyTo}\` kept as an advisory Scope header; OpenCode \`instructions[]\` is always-on with no deterministic glob matching`,
     });
   }
-  if (record.excludeAgent !== undefined) {
+  const excludeAgent = resolveExcludeAgent(record, agentReferences);
+  if (excludeAgent !== undefined) {
     notes.push({
       label: "excludeAgent",
-      value: `\`${record.excludeAgent}\` recorded in \`fragments/excluded-agents.md\`; OpenCode has no native excludeAgent enforcement`,
+      value: `\`${excludeAgent.reference}\` recorded in \`fragments/excluded-agents.md\`; OpenCode has no native excludeAgent enforcement`,
     });
   }
   return notes;
 }
 
-export function renderInstructionContent(artifact: ParsedCopilotArtifact): string {
+export function renderInstructionContent(
+  artifact: ParsedCopilotArtifact,
+  agentReferences?: AgentReferenceIndex,
+): string {
   const record = toInstructionRecord(artifact);
   const withHeader = `${buildScopeHeader(record.applyTo)}\n\n${artifact.body}`;
-  return appendOpenCodeNotes(withHeader, buildInstructionNotes(record));
+  return appendOpenCodeNotes(withHeader, buildInstructionNotes(record, agentReferences));
 }
 
-export function buildInstructionRows(record: InstructionRecord, relativePath: string): ReportRow[] {
+export function buildInstructionRows(
+  record: InstructionRecord,
+  relativePath: string,
+  agentReferences?: AgentReferenceIndex,
+): ReportRow[] {
   const rows: ReportRow[] = [
     {
       code: ReportCode.Migrated,
@@ -97,15 +120,17 @@ export function buildInstructionRows(record: InstructionRecord, relativePath: st
       message: "Migrated instruction file; body preserved verbatim.",
     },
   ];
-  if (record.excludeAgent !== undefined) {
+  const excludeAgent = resolveExcludeAgent(record, agentReferences, relativePath);
+  if (excludeAgent !== undefined) {
     rows.push({
       code: ReportCode.ExcludedAgent,
       severity: ReportSeverity.Warning,
       family: ArtifactFamily.Instructions,
       source: record.source,
       dest: relativePath,
-      message: `excludeAgent \`${record.excludeAgent}\` has no native OpenCode enforcement; recorded for manual review.`,
+      message: `excludeAgent \`${excludeAgent.reference}\` has no native OpenCode enforcement; recorded for manual review.`,
     });
+    rows.push(...excludeAgent.rows);
   }
   return rows;
 }
@@ -113,12 +138,12 @@ export function buildInstructionRows(record: InstructionRecord, relativePath: st
 export class InstructionsMigrator implements Migrator {
   readonly family = ArtifactFamily.Instructions;
 
-  async transform(artifact: ParsedCopilotArtifact, _context: TransformContext): Promise<TransformResult> {
+  async transform(artifact: ParsedCopilotArtifact, context: TransformContext): Promise<TransformResult> {
     const record = toInstructionRecord(artifact);
     const relativePath = instructionOutputPath(record, INSTRUCTIONS_DIR_NAME);
     const files: MigratedFile[] = [
-      { relativePath, content: renderInstructionContent(artifact) },
+      { relativePath, content: renderInstructionContent(artifact, context.agentReferences) },
     ];
-    return { files, rows: buildInstructionRows(record, relativePath), warnings: [] };
+    return { files, rows: buildInstructionRows(record, relativePath, context.agentReferences), warnings: [] };
   }
 }

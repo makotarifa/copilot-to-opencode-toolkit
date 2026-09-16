@@ -17,7 +17,7 @@ const TEAMS_FIXTURE = join(FIXTURES, "copilot-teams");
 const USER_CONFIG_FIXTURE = join(FIXTURES, "user-config");
 const REPO_DEFAULTS = [join(TOOLKIT_DIR, "..", "copilot-source"), join(TOOLKIT_DIR, "..", "migrated")];
 const GOLDEN_PROJECT_TREE_HASH =
-  "c8705843e8bb9021039353c5ed8447daea547dc3fe537fa47297f3bfe1839914";
+  "8bd7fc5ddc55dd15482d9e4861431d9f45b7bd59d64cbc70b5cfea9598ff1258";
 const tempDirs: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -190,6 +190,29 @@ describe("end-to-end migration", () => {
     expect(exitCode).toBe(0);
     expect(await hashTree(dest)).toBe(GOLDEN_PROJECT_TREE_HASH);
   });
+
+  test("classic project scope reports every unresolved agent reference", async () => {
+    const repoRoot = await makeRepoWithMap();
+    const source = await makeSource();
+    const dest = join(repoRoot, "out");
+
+    const exitCode = await runCli(
+      ["--yes", "--scope", "project", "--source", source, "--dest", dest],
+      { cwd: repoRoot, dependencies: await isolatedPlugins() },
+    );
+
+    expect(exitCode).toBe(0);
+    const unknownRefs = (await readReportRows(dest)).filter((row) =>
+      row.message.includes("UNKNOWN_AGENT_REF:"),
+    );
+    expect(unknownRefs).toHaveLength(4);
+    expect(unknownRefs.every((row) => row.code === ReportCode.ManualReview)).toBe(true);
+    const messages = unknownRefs.map((row) => row.message).join("\n");
+    expect(messages).toContain("`agent`");
+    expect(messages).toContain("`reviewer`");
+    expect(messages).toContain("`docs-writer`");
+    expect(await readFile(join(dest, "_migration-report.md"), "utf8")).toContain("UNKNOWN_AGENT_REF:");
+  });
 });
 
 describe("user scope end-to-end", () => {
@@ -318,7 +341,7 @@ describe("team selection", () => {
     expect(multi?.message).toContain("neo →");
     expect(multi?.message).toContain("instructions: 3");
     expect(multi?.message).toContain("agent: 1");
-    expect(rows.some((row) => row.source === "(team breakdown): smith")).toBe(true);
+    expect(rows.some((row) => row.source === "(team breakdown): github-copilot/smith")).toBe(true);
   });
 
   test("--team all migrates every team without the warning", async () => {
@@ -334,7 +357,7 @@ describe("team selection", () => {
     expect(exitCode).toBe(0);
     expect(await pathExists(join(dest, "instructions", "common", "generic.md"))).toBe(true);
     expect(await pathExists(join(dest, "instructions", "neo", "generic.md"))).toBe(true);
-    expect(await pathExists(join(dest, "instructions", "smith", "generic.md"))).toBe(true);
+    expect(await pathExists(join(dest, "instructions", "github-copilot", "smith", "generic.md"))).toBe(true);
     const rows = await readReportRows(dest);
     expect(rows.some((row) => row.code === ReportCode.MultiTeam)).toBe(false);
   });
@@ -473,6 +496,48 @@ describe("team selection", () => {
       config.instructions.some((entry) => entry.startsWith(`${configHome}/instructions/`) && entry.includes("/neo/")),
     ).toBe(true);
     expect(config.instructions).not.toContain(`${configHome}/instructions/*.md`);
+  });
+
+  test("rewrites a command's owning agent to the id the agent file registers", async () => {
+    const repoRoot = await makeRepoWithMap();
+    const source = await makeTeamsSource();
+    const dest = join(repoRoot, "out");
+
+    const exitCode = await runCli(
+      ["--yes", "--team", "common", "--source", source, "--dest", dest],
+      { cwd: repoRoot },
+    );
+
+    expect(exitCode).toBe(0);
+    const command = await readFile(join(dest, "commands", "common", "jira-reviewer.md"), "utf8");
+    expect(command).toContain("agent: common/jira-reviewer");
+    expect(command).toContain('agent="common/jira-reviewer"');
+    expect(await pathExists(join(dest, "agents", "common", "jira-reviewer.md"))).toBe(true);
+    const rows = await readReportRows(dest);
+    expect(rows.some((row) => row.message.includes("AMBIGUOUS_AGENT_REF:"))).toBe(false);
+  });
+
+  test("flags an ambiguous agent reference and keeps it verbatim", async () => {
+    const repoRoot = await makeRepoWithMap();
+    const source = await makeTeamsSource();
+    const dest = join(repoRoot, "out");
+
+    const exitCode = await runCli(
+      ["--yes", "--team", "all", "--source", source, "--dest", dest],
+      { cwd: repoRoot },
+    );
+
+    expect(exitCode).toBe(0);
+    const command = await readFile(join(dest, "commands", "common", "jira-reviewer.md"), "utf8");
+    expect(command).toContain("agent: jira-reviewer");
+    expect(command).not.toContain("agent: common/jira-reviewer");
+
+    const rows = await readReportRows(dest);
+    const ambiguous = rows.find((row) => row.message.includes("AMBIGUOUS_AGENT_REF:"));
+    expect(ambiguous?.code).toBe(ReportCode.ManualReview);
+    expect(ambiguous?.message).toContain("common/jira-reviewer");
+    expect(ambiguous?.message).toContain("neo/jira-reviewer");
+    expect(await readFile(join(dest, "_migration-report.md"), "utf8")).toContain("AMBIGUOUS_AGENT_REF:");
   });
 });
 

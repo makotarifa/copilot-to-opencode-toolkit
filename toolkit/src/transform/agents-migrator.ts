@@ -5,12 +5,12 @@ import { ReportCode, ReportRow, ReportSeverity } from "../domain/report";
 import { directoriesForScope, TargetScope } from "../domain/target-scope";
 import { buildModelNotes } from "../model/model-notes";
 import { modelResultRows } from "../model/model-report";
-import { getBoolean, getRecordArray, getString, getStringArray } from "../parse/frontmatter-values";
+import { getBoolean, getString, getStringArray } from "../parse/frontmatter-values";
 import { serializeFrontmatter } from "../parse/frontmatter-serializer";
+import { buildHandoffsSection } from "./agent-handoffs";
 import { Migrator, TransformContext, TransformResult } from "./migrator";
-import { namespaceOf, toModelValue, withNamespace } from "./transform-helpers";
+import { agentBasenameOf, namespaceOf, toModelValue, withNamespace } from "./transform-helpers";
 
-const AGENT_SUFFIX = ".agent.md";
 const CHATMODE_SUFFIX = ".chatmode.md";
 const DESCRIPTION_KEY = "description";
 const MODEL_KEY = "model";
@@ -19,7 +19,6 @@ const USER_INVOCABLE_KEY = "user-invocable";
 const DISABLE_MODEL_INVOCATION_KEY = "disable-model-invocation";
 const INFER_KEY = "infer";
 const TOOLS_KEY = "tools";
-const HANDOFFS_KEY = "handoffs";
 const SUBAGENTS_KEY = "agents";
 const FRICTION_KEYS = ["target", "mcp-servers"];
 const MODE_PRIMARY = "primary";
@@ -35,17 +34,6 @@ interface AgentRender {
   readonly content: string;
   readonly rows: ReportRow[];
   readonly warnings: string[];
-}
-
-function outputNameOf(relativePath: string): string {
-  const basename = relativePath.slice(relativePath.lastIndexOf("/") + 1);
-  if (basename.endsWith(AGENT_SUFFIX)) {
-    return basename.slice(0, -AGENT_SUFFIX.length);
-  }
-  if (basename.endsWith(CHATMODE_SUFFIX)) {
-    return basename.slice(0, -CHATMODE_SUFFIX.length);
-  }
-  return basename;
 }
 
 function resolveMode(frontmatter: Frontmatter): string {
@@ -74,21 +62,6 @@ function legacyFieldNotes(frontmatter: Frontmatter): OpenCodeNote[] {
     notes.push({ label: INFER_KEY, value: `\`${infer}\` — legacy Copilot field; no OpenCode equivalent` });
   }
   return notes;
-}
-
-function buildHandoffsSection(frontmatter: Frontmatter): string {
-  const handoffs = getRecordArray(frontmatter, HANDOFFS_KEY);
-  if (handoffs.length === 0) {
-    return "";
-  }
-
-  const lines = ["", "## Handoffs", "", "OpenCode has no handoff UI; delegate explicitly with `task()`:", ""];
-  for (const handoff of handoffs) {
-    const agent = getString(handoff, "agent") ?? "";
-    const prompt = getString(handoff, "prompt") ?? "";
-    lines.push(`- ${getString(handoff, "label") ?? agent}:`, "", "```", "task(", `  agent="${agent}",`, `  prompt="${prompt}",`, ")", "```", "");
-  }
-  return lines.join("\n");
 }
 
 function collectFrictions(frontmatter: Frontmatter, source: string): Friction {
@@ -162,14 +135,20 @@ async function renderAgent(artifact: ParsedCopilotArtifact, context: TransformCo
     notes.push({ label: "Legacy", value: "`*.chatmode.md` aliased to an OpenCode agent" });
   }
 
-  const body = [artifact.body, buildHandoffsSection(artifact.frontmatter)].join("\n");
+  const handoffs = buildHandoffsSection(artifact.frontmatter, context.agentReferences, source);
+  const body = [artifact.body, handoffs.section].join("\n");
   const content = `${serializeFrontmatter(frontmatter)}${appendOpenCodeNotes(body, notes)}`;
   const warnings = [...model.warnings];
   if (description === undefined) {
     warnings.push(`Agent \`${source}\` has no description; OpenCode agents require one.`);
   }
 
-  return { outputName: outputNameOf(source), content, rows: [...model.rows, ...friction.rows], warnings };
+  return {
+    outputName: agentBasenameOf(source),
+    content,
+    rows: [...model.rows, ...friction.rows, ...handoffs.rows],
+    warnings,
+  };
 }
 
 export class AgentsMigrator implements Migrator {

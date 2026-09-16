@@ -7,6 +7,7 @@ import { ParsedCopilotArtifact } from "../src/domain/copilot-artifact";
 import { ReportCode } from "../src/domain/report";
 import { buildInstructionsBundle } from "../src/transform/instructions-fragments";
 import { InstructionsMigrator } from "../src/transform/instructions-migrator";
+import { AgentReferenceIndex } from "../src/transform/reference-index";
 import { loadMarkdownArtifact } from "./helpers/artifact";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
@@ -21,6 +22,14 @@ function makeArtifact(relativePath: string, applyTo: string, body: string): Pars
     inventory: { family: ArtifactFamily.Instructions, absolutePath: relativePath, relativePath, sha: "x" },
     frontmatter: { applyTo },
     body,
+  };
+}
+
+function agentArtifact(relativePath: string): ParsedCopilotArtifact {
+  return {
+    inventory: { family: ArtifactFamily.Agent, absolutePath: relativePath, relativePath, sha: "x" },
+    frontmatter: {},
+    body: "",
   };
 }
 
@@ -51,6 +60,61 @@ describe("InstructionsMigrator (per file)", () => {
     expect(content).toContain("## OpenCode notes");
     expect(content).toContain("docs-writer");
     expect(result.rows.some((row) => row.code === ReportCode.ExcludedAgent)).toBe(true);
+  });
+});
+
+describe("InstructionsMigrator agent reference rewriting", () => {
+  test("rewrites excludeAgent to the namespaced id when resolved", async () => {
+    const artifact = await loadMarkdownArtifact(
+      WORKSPACE,
+      ".github/instructions/api.instructions.md",
+      ArtifactFamily.Instructions,
+    );
+    const agentReferences = new AgentReferenceIndex([agentArtifact("common/agents/docs-writer.agent.md")]);
+
+    const result = await new InstructionsMigrator().transform(artifact, { destRoot: DEST_ROOT, agentReferences });
+    const content = result.files[0]?.content ?? "";
+
+    expect(content).toContain("`common/docs-writer`");
+    expect(content).not.toContain("`docs-writer`");
+    expect(result.rows.some((row) => row.code === ReportCode.ManualReview)).toBe(false);
+  });
+
+  test("rewrites the excluded-agents table cell when resolved", async () => {
+    const artifact = await loadMarkdownArtifact(
+      WORKSPACE,
+      ".github/instructions/api.instructions.md",
+      ArtifactFamily.Instructions,
+    );
+    const agentReferences = new AgentReferenceIndex([agentArtifact("common/agents/docs-writer.agent.md")]);
+
+    const bundle = buildInstructionsBundle([artifact], { agentReferences });
+    const excluded = bundle.files.find((file) => file.relativePath === "fragments/excluded-agents.md");
+
+    expect(excluded?.content).toContain("`common/docs-writer`");
+    expect(bundle.rows.some((row) => row.code === ReportCode.ManualReview)).toBe(false);
+  });
+
+  test("flags an ambiguous excludeAgent and keeps it verbatim", async () => {
+    const artifact = await loadMarkdownArtifact(
+      WORKSPACE,
+      ".github/instructions/api.instructions.md",
+      ArtifactFamily.Instructions,
+    );
+    const agentReferences = new AgentReferenceIndex([
+      agentArtifact("common/agents/docs-writer.agent.md"),
+      agentArtifact("neo/agents/docs-writer.agent.md"),
+    ]);
+
+    const bundle = buildInstructionsBundle([artifact], { agentReferences });
+    const excluded = bundle.files.find((file) => file.relativePath === "fragments/excluded-agents.md");
+
+    expect(excluded?.content).toContain("`docs-writer`");
+    expect(
+      bundle.rows.some(
+        (row) => row.code === ReportCode.ManualReview && row.message.includes("AMBIGUOUS_AGENT_REF:"),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -125,7 +189,7 @@ describe("InstructionsMigrator team namespacing", () => {
     expect(index?.content).toMatch(/\.opencode\/instructions\/[a-z]+\/[a-z-]+\.md/);
   });
 
-  test("filters the infra segment from the namespace", async () => {
+  test("keeps named container segments verbatim in the namespace", async () => {
     const artifact = await loadMarkdownArtifact(
       TEAMS_WORKSPACE,
       "github-copilot/smith/instructions/generic.instructions.md",
@@ -134,7 +198,19 @@ describe("InstructionsMigrator team namespacing", () => {
 
     const result = await new InstructionsMigrator().transform(artifact, { destRoot: DEST_ROOT });
 
-    expect(result.files[0]?.relativePath).toBe("instructions/smith/generic.md");
+    expect(result.files[0]?.relativePath).toBe("instructions/github-copilot/smith/generic.md");
+  });
+
+  test("drops a dot-prefixed infra segment from the namespace", async () => {
+    const artifact = await loadMarkdownArtifact(
+      WORKSPACE,
+      ".github/instructions/api.instructions.md",
+      ArtifactFamily.Instructions,
+    );
+
+    const result = await new InstructionsMigrator().transform(artifact, { destRoot: DEST_ROOT });
+
+    expect(result.files[0]?.relativePath).toBe("instructions/api.md");
   });
 });
 

@@ -1,7 +1,13 @@
 import { FrontmatterValue } from "../domain/copilot-artifact";
+import { basenameOf } from "../discovery/path-classifier";
 
 const FAMILY_SEGMENTS = new Set(["agents", "prompts", "instructions", "skills"]);
-const INFRA_SEGMENTS = new Set(["github-copilot", ".github"]);
+const INFRA_SEGMENT_PREFIX = ".";
+const AGENT_SUFFIXES = [".agent.md", ".chatmode.md"];
+
+function isInfraSegment(segment: string): boolean {
+  return segment.startsWith(INFRA_SEGMENT_PREFIX);
+}
 
 export function namespaceOf(relativePath: string): string {
   const segments = relativePath
@@ -15,8 +21,20 @@ export function namespaceOf(relativePath: string): string {
   }
   return segments
     .slice(0, familyIndex)
-    .filter((segment) => !INFRA_SEGMENTS.has(segment))
+    .filter((segment) => !isInfraSegment(segment))
     .join("/");
+}
+
+export function agentBasenameOf(relativePath: string): string {
+  const basename = basenameOf(relativePath);
+  const suffix = AGENT_SUFFIXES.find((candidate) => basename.endsWith(candidate));
+  return suffix === undefined ? basename : basename.slice(0, -suffix.length);
+}
+
+export function agentIdOf(relativePath: string): string {
+  const namespace = namespaceOf(relativePath);
+  const base = agentBasenameOf(relativePath);
+  return namespace.length === 0 ? base : `${namespace}/${base}`;
 }
 
 export function withNamespace(directory: string, namespace: string): string {

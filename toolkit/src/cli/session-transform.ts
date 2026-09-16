@@ -7,6 +7,7 @@ import { classifyCopilotPath } from "../discovery/path-classifier";
 import { parseFrontmatterFile } from "../parse/frontmatter-parser";
 import { Conflict } from "../safety/conflict-detector";
 import { buildInstructionsBundle } from "../transform/instructions-fragments";
+import { AgentReferenceIndex } from "../transform/reference-index";
 import { MigratorRegistry } from "../transform/registry";
 import { InteractivePrompts } from "./prompts";
 import { Aggregate, SessionInput } from "./session-types";
@@ -53,17 +54,18 @@ export async function transformInstructions(
   artifacts: readonly ParsedCopilotArtifact[],
   input: SessionInput,
   prompts: InteractivePrompts,
+  agentReferences?: AgentReferenceIndex,
 ): Promise<Aggregate> {
   const promotedInstructionsDir =
     (input.options.scope ?? TargetScope.Project) === TargetScope.User
       ? `${input.paths.dest}/${INSTRUCTIONS_DIR_NAME}`
       : undefined;
-  let bundle = buildInstructionsBundle(artifacts, { promotedInstructionsDir });
+  let bundle = buildInstructionsBundle(artifacts, { promotedInstructionsDir, agentReferences });
   const overBudget = bundle.warnings.some((warning) => warning.startsWith("BUDGET_EXCEEDED"));
   if (!input.options.yes && overBudget) {
     const keepAll = await prompts.confirm("Instruction budget exceeded. Keep every instruction always-on?", false);
     if (keepAll) {
-      bundle = buildInstructionsBundle(artifacts, { overrideBudget: true, promotedInstructionsDir });
+      bundle = buildInstructionsBundle(artifacts, { overrideBudget: true, promotedInstructionsDir, agentReferences });
     }
   }
   return { files: [...bundle.files], rows: [...bundle.rows], warnings: [...bundle.warnings], envVarGroups: [], providerPreviews: [] };
@@ -83,6 +85,7 @@ export async function transformOthers(
   artifacts: readonly ParsedCopilotArtifact[],
   registry: MigratorRegistry,
   input: SessionInput,
+  agentReferences?: AgentReferenceIndex,
 ): Promise<Aggregate> {
   const aggregate: Aggregate = { files: [], rows: [], warnings: [], envVarGroups: [], providerPreviews: [] };
   const context = {
@@ -90,6 +93,7 @@ export async function transformOthers(
     scope: input.options.scope ?? TargetScope.Project,
     promptPattern: DEFAULT_PROMPT_PATTERN,
     models: input.dependencies?.models,
+    agentReferences,
   };
 
   for (const artifact of artifacts) {

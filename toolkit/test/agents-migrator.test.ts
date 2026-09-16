@@ -8,6 +8,7 @@ import { ReportCode } from "../src/domain/report";
 import { ModelCatalog } from "../src/model/model-catalog";
 import { createModelResolver } from "../src/model/model-resolver";
 import { AgentsMigrator } from "../src/transform/agents-migrator";
+import { AgentReferenceIndex } from "../src/transform/reference-index";
 import { loadMarkdownArtifact } from "./helpers/artifact";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
@@ -25,6 +26,14 @@ const models = createModelResolver({
 });
 
 const CONTEXT = { destRoot: DEST_ROOT, models };
+
+function agentArtifact(relativePath: string): ParsedCopilotArtifact {
+  return {
+    inventory: { family: ArtifactFamily.Agent, absolutePath: relativePath, relativePath, sha: "x" },
+    frontmatter: {},
+    body: "",
+  };
+}
 
 describe("AgentsMigrator", () => {
   test("resolves the first mappable model and preserves the full original array in notes", async () => {
@@ -83,6 +92,67 @@ describe("AgentsMigrator", () => {
     expect(content).toContain("Model (original): `[unknown-name, gpt-4o]`");
     expect(content).toContain("Model fallback members: `unknown-name`");
     expect(result.rows.some((row) => row.code === ReportCode.UnmappedModel)).toBe(false);
+  });
+
+  test("rewrites a handoff to the namespaced id when resolved", async () => {
+    const artifact = await loadMarkdownArtifact(WORKSPACE, ".github/agents/example.agent.md", ArtifactFamily.Agent);
+    const agentReferences = new AgentReferenceIndex([agentArtifact("common/agents/reviewer.agent.md")]);
+
+    const result = await new AgentsMigrator().transform(artifact, { ...CONTEXT, agentReferences });
+    const content = result.files[0]?.content ?? "";
+
+    expect(content).toContain('agent="common/reviewer"');
+    expect(result.rows.some((row) => row.code === ReportCode.ManualReview)).toBe(false);
+  });
+
+  test("keeps an ambiguous handoff verbatim and flags it", async () => {
+    const artifact = await loadMarkdownArtifact(WORKSPACE, ".github/agents/example.agent.md", ArtifactFamily.Agent);
+    const agentReferences = new AgentReferenceIndex([
+      agentArtifact("common/agents/reviewer.agent.md"),
+      agentArtifact("neo/agents/reviewer.agent.md"),
+    ]);
+
+    const result = await new AgentsMigrator().transform(artifact, { ...CONTEXT, agentReferences });
+    const content = result.files[0]?.content ?? "";
+
+    expect(content).toContain('agent="reviewer"');
+    expect(
+      result.rows.some(
+        (row) => row.code === ReportCode.ManualReview && row.message.includes("AMBIGUOUS_AGENT_REF:"),
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps a handoff without an agent and emits no delegation", async () => {
+    const artifact: ParsedCopilotArtifact = {
+      inventory: {
+        family: ArtifactFamily.Agent,
+        absolutePath: ".github/agents/agentless.agent.md",
+        relativePath: ".github/agents/agentless.agent.md",
+        sha: "x",
+      },
+      frontmatter: {
+        description: "Agent with agentless handoffs",
+        handoffs: [
+          { label: "Missing agent", prompt: "First prompt." },
+          { label: "Empty agent", agent: "", prompt: "Second prompt." },
+        ],
+      },
+      body: "Body\n",
+    };
+    const agentReferences = new AgentReferenceIndex([agentArtifact("common/agents/reviewer.agent.md")]);
+
+    const result = await new AgentsMigrator().transform(artifact, { ...CONTEXT, agentReferences });
+    const content = result.files[0]?.content ?? "";
+
+    expect(content).toContain("## Handoffs");
+    expect(content).toContain("Missing agent");
+    expect(content).toContain("First prompt.");
+    expect(content).toContain("Empty agent");
+    expect(content).toContain("Second prompt.");
+    expect(content).not.toContain('agent=""');
+    expect(result.rows.some((row) => row.message.includes("UNKNOWN_AGENT_REF:"))).toBe(false);
+    expect(result.rows.some((row) => row.code === ReportCode.ManualReview)).toBe(false);
   });
 
   test("namespaces an agent by its source team", async () => {
